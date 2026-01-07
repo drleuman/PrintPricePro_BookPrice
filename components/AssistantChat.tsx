@@ -46,7 +46,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       id: 'welcome',
       role: 'assistant',
       content:
-        "Hello, I'm PrintPrice Pro. Tell me what book you want to print (for example: 'an A5 novel, 200 pages, 1000 copies') and I'll help you with presets, real quotes, and order creation.",
+        "Hello, I'm PrintPrice Pro AI Assistant. I can help you describe your book printing project and get real quotes. Note: The AI service may not be available yet - if so, please use the form below to enter your specifications manually.",
     },
   ]);
   const [input, setInput] = useState('');
@@ -98,6 +98,19 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       });
 
       if (!res.ok) {
+        // Handle 404 specifically - AI endpoint not available
+        if (res.status === 404) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: "I'm sorry, but the AI Assistant service is currently unavailable. Please use the form below to manually enter your book specifications and calculate prices. The AI Assistant will be available soon!",
+            },
+          ]);
+          setLoading(false);
+          return;
+        }
         throw new Error(`HTTP ${res.status}`);
       }
 
@@ -134,7 +147,10 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       }
     } catch (err: any) {
       console.error('Assistant error:', err);
-      setError(err?.message || 'Error contacting the assistant.');
+      // Don't show technical error to user if it's a 404 (already handled above)
+      if (!err.message?.includes('404')) {
+        setError(err?.message || 'Error contacting the assistant.');
+      }
     } finally {
       setLoading(false);
     }
@@ -166,8 +182,8 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
             >
               <div
                 className={`max-w-[80%] rounded-lg px-3 py-2 ${m.role === 'user'
-                    ? 'bg-indigo-600 text-white rounded-br-none'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                  ? 'bg-indigo-600 text-white rounded-br-none'
+                  : 'bg-gray-100 text-gray-800 rounded-bl-none'
                   }`}
               >
                 {m.content}
