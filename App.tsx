@@ -318,6 +318,22 @@ const App: React.FC = () => {
       return Math.floor(num); // Ensure integer
     };
 
+    // Validate paper types (ensure never null or empty)
+    const validatePaperType = <T extends string>(value: string | null | undefined, defaultValue: T): T => {
+      if (!value || value.trim() === '') {
+        return defaultValue;
+      }
+      return value as T;
+    };
+
+    // Validate finishing options (ensure never empty, default to empty string which backend normalizes to 'none')
+    const validateFinishing = (value: string | null | undefined): '' | 'gloss_lam' | 'matt_lam' | 'soft_touch' => {
+      if (!value) {
+        return '';
+      }
+      return value as '' | 'gloss_lam' | 'matt_lam' | 'soft_touch';
+    };
+
     return {
       // Basic info
       copies: bookPricePayload.copies,
@@ -332,10 +348,10 @@ const App: React.FC = () => {
       cover_print: bookPricePayload.cover_print,
       cover_print_rev: bookPricePayload.cover_print_rev,
 
-      // Paper types
-      paper_type_interior: bookPricePayload.paper_type_interior,
-      paper_type_cover: bookPricePayload.paper_type_cover,
-      paper_type_endpaper: bookPricePayload.paper_type_endpaper,
+      // Paper types (validated to ensure never null/empty)
+      paper_type_interior: validatePaperType(bookPricePayload.paper_type_interior, 'offset'),
+      paper_type_cover: validatePaperType(bookPricePayload.paper_type_cover, 'mc'),
+      paper_type_endpaper: validatePaperType(bookPricePayload.paper_type_endpaper, 'offset'),
 
       // Paper weights
       paper_weight_interior: bookPricePayload.paper_weight_interior,
@@ -346,14 +362,14 @@ const App: React.FC = () => {
       pms_interior: validatePMS(bookPricePayload.pms_interior),
       pms_cover: validatePMS(bookPricePayload.pms_cover),
 
-      // Binding & finishing
+      // Binding & finishing (validated)
       binding_method: bookPricePayload.binding_method,
-      finishing_options: bookPricePayload.finishing_options,
+      finishing_options: validateFinishing(bookPricePayload.finishing_options),
       uv_varnish: bookPricePayload.uv_varnish,
 
       // Endpapers
       endpapers: bookPricePayload.endpapers,
-      endpapers_print: bookPricePayload.endpapers_print,
+      endpapers_print: bookPricePayload.endpapers_print || '',
 
       // Extra costs
       extra_book: bookPricePayload.extra_book,
