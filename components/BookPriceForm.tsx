@@ -296,8 +296,8 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
           >
             {DELIVERY_COUNTRIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c.code} value={c.code}>
+                {c.name}
               </option>
             ))}
           </select>
