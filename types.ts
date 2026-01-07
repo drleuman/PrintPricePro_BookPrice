@@ -1,57 +1,72 @@
-// --- General UI Types ---
-// Keeping only types relevant to general UI, removed preflight specific ones.
+// --- Book Price Engine Types (from Smoke Test) ---
 
-// --- Book Price Engine Types (from Context 2 / Smoke Test) ---
+// Paper types
+export type PaperTypeInterior = 'offset' | 'mc' | 'lux' | 'munken' | 'other';
+export type PaperTypeCover = 'mc' | 'artboard' | 'offset' | 'wfmc' | 'other' | 'none';
+export type PaperTypeEndpaper = 'offset' | 'mc' | 'other' | 'none';
 
-// Define allowed string literal types for select fields for better type safety
-export type BookSize = 'A3' | 'A4' | 'A5' | 'A6' | 'B4' | 'B5' | 'B6' | 'Custom';
-export type Orientation = 'Portrait' | 'Landscape';
-export type InteriorPrint = '4/4' | '1/1' | 'Black and White' | 'Color'; // Added common aliases
-export type CoverPrint = '4/0' | '4/4' | '1/0' | 'Color Front Only' | 'Color Both Sides' | 'Black Front Only'; // Added common aliases
-export type BindingMethod = 'Perfect Bound' | 'Hardcover' | 'Saddle Stitch' | 'Wire-O' | 'Spiral'; // Expanded options
-export type FinishingOption = 'Gloss lam.' | 'Matt lam.' | 'Soft Touch' | 'UV Spot' | 'Foil'; // Expanded options
-export type EndpapersOption = 'None' | 'White' | 'Black' | 'Custom';
-export type EndpapersPrint = '4/4' | '1/1' | 'None'; // Example, could be more specific
+// Book specifications
+export type BookSize = 'A6' | 'A5' | '170 × 240 mm' | 'A4' | '210 × 210 mm';
+export type Orientation = 'portrait' | 'landscape';
+export type InteriorPrint = '4/4' | '2/2' | '1/1';
+export type CoverPrint = '4/0' | '4/4' | '1/0';
+export type BindingMethod = 'perfect_bound' | 'thread_sewn_sc' | 'thread_sewn_hc' | 'saddle_stitch' | 'wire_o' | 'spiral';
+export type FinishingOption = 'gloss_lam' | 'matt_lam' | 'soft_touch' | '';
+export type EndpapersOption = 'none' | 'standard';
+export type EndpapersPrint = '' | '1/1' | '4/4';
 
+// Complete payload interface matching smoke test
 export interface InitialBookPricePayload {
-  copies: number;
-  total_page_count: number;
-  interior_pages: number;
-  cover_pages: number; // Assumed 4
-  book_size: BookSize;
-  orientation: Orientation;
-  interior_print: InteriorPrint;
-  cover_print: CoverPrint;
-  paper_weight_interior: number; // in gsm
-  paper_weight_cover: number; // in gsm
-  binding_method: BindingMethod;
-  finishing_options: FinishingOption[]; // Array for multi-select
-  delivery_country: string; // ISO2 code, e.g., 'US', 'ES'
-  endpapers: EndpapersOption;
-  endpapers_print: EndpapersPrint;
-  paper_weight_endpapers: number; // in gsm
-}
-
-// Actual payload sent to API, finishing_options is a string
-export interface BookPricePayload {
+  // Basic info
   copies: number;
   interior_pages: number;
   cover_pages: number;
   book_size: BookSize;
   orientation: Orientation;
+  delivery_country: string; // ISO2 code
+
+  // Print options
   interior_print: InteriorPrint;
   cover_print: CoverPrint;
+  cover_print_rev: number; // 1-6
+
+  // Paper types
+  paper_type_interior: PaperTypeInterior;
+  paper_type_cover: PaperTypeCover;
+  paper_type_endpaper: PaperTypeEndpaper;
+
+  // Paper weights (gsm)
   paper_weight_interior: number;
   paper_weight_cover: number;
+  paper_weight_endpapers: number;
+
+  // PMS colors
+  pms_interior: number; // 1-3
+  pms_cover: number; // 1-3
+
+  // Binding & finishing
   binding_method: BindingMethod;
-  finishing_options: string; // Comma-separated string for API
-  delivery_country: string;
+  finishing_options: FinishingOption;
+  uv_varnish: boolean;
+
+  // Endpapers (for hardcover)
   endpapers: EndpapersOption;
   endpapers_print: EndpapersPrint;
-  paper_weight_endpapers: number;
-  debug?: 1; // Optional debug field from smoke test
+
+  // Extra costs
+  extra_book: number;
+  extra_section: number;
+  extra_fixed: number;
+  extra_variable: number;
+
+  // Debug
+  debug?: 1;
 }
 
+// API payload (same structure for this implementation)
+export interface BookPricePayload extends InitialBookPricePayload { }
+
+// Response types
 export interface CostBreakdown {
   printing: number;
   paper: number;
@@ -65,7 +80,7 @@ export interface BookPriceOffer {
   id: string;
   print_house: string;
   total_cost: number;
-  estimated_delivery_time: string; // e.g., "5-7 business days"
+  estimated_delivery_time: string;
   breakdown: CostBreakdown;
   currency: string;
 }

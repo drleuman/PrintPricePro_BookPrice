@@ -55,12 +55,13 @@ function inferSizeAndOrientationFromPage(page: any) {
   const widthMm = widthPt * PT_TO_MM;
   const heightMm = heightPt * PT_TO_MM;
 
-  const orientation = widthMm >= heightMm ? 'Landscape' : 'Portrait';
+  const orientation = widthMm >= heightMm ? 'landscape' : 'portrait';
 
   const shortSide = Math.min(widthMm, heightMm);
   const longSide = Math.max(widthMm, heightMm);
 
-  let bestMatch: string = 'Custom';
+  let bestMatch: string = 'A5'; // Default to A5 instead of Custom
+
   let bestDiff = Infinity;
 
   for (const size of KNOWN_SIZES) {
@@ -77,8 +78,8 @@ function inferSizeAndOrientationFromPage(page: any) {
   return {
     widthMm,
     heightMm,
-    orientation, // "Portrait" | "Landscape"
-    book_size: bestMatch, // "A4", "A5", "Custom", etc.
+    orientation, // "portrait" | "landscape" (lowercase)
+    book_size: bestMatch, // "A4", "A5", etc.
   };
 }
 
@@ -115,23 +116,47 @@ const App: React.FC = () => {
 
   const [bookPricePayload, setBookPricePayload] =
     useState<InitialBookPricePayload>({
-      copies: 100,
-      total_page_count: 0,
-      interior_pages: 0,
+      // Basic info
+      copies: 1000,
+      interior_pages: 120,
       cover_pages: 4,
       book_size: 'A5',
-      orientation: 'Portrait',
+      orientation: 'portrait',
+      delivery_country: 'ES',
+
+      // Print options
       interior_print: '4/4',
       cover_print: '4/0',
-      paper_weight_interior: 80,
-      paper_weight_cover: 250,
-      binding_method: 'Perfect Bound',
-      finishing_options: ['None'],
-      delivery_country: 'ES',
-      endpapers: 'None',
-      endpapers_print: 'None',
-      paper_weight_endpapers: 0,
-      debug: false,
+      cover_print_rev: 1,
+
+      // Paper types
+      paper_type_interior: 'offset',
+      paper_type_cover: 'mc',
+      paper_type_endpaper: 'offset',
+
+      // Paper weights (gsm)
+      paper_weight_interior: 70,
+      paper_weight_cover: 120,
+      paper_weight_endpapers: 115,
+
+      // PMS colors
+      pms_interior: 1,
+      pms_cover: 1,
+
+      // Binding & finishing
+      binding_method: 'perfect_bound',
+      finishing_options: 'gloss_lam',
+      uv_varnish: false,
+
+      // Endpapers
+      endpapers: 'none',
+      endpapers_print: '',
+
+      // Extra costs
+      extra_book: 0,
+      extra_section: 0,
+      extra_fixed: 0,
+      extra_variable: 0,
     });
 
   const [offers, setOffers] = useState<BookPriceResponse | null>(null);
@@ -213,10 +238,10 @@ const App: React.FC = () => {
     const rawOffers: any[] = Array.isArray(data?.print_houses)
       ? data.print_houses
       : Array.isArray(data?.offers)
-      ? data.offers
-      : Array.isArray(data)
-      ? data
-      : [];
+        ? data.offers
+        : Array.isArray(data)
+          ? data
+          : [];
 
     const offers: BookPriceOffer[] = rawOffers.map(
       (raw: any, index: number) => {
@@ -237,17 +262,17 @@ const App: React.FC = () => {
         const breakdown =
           Array.isArray(raw.lines)
             ? raw.lines.map((line: any) => ({
-                label: String(line.item ?? ''),
-                amount:
-                  typeof line.line_total === 'number'
-                    ? line.line_total
-                    : line.line_total
+              label: String(line.item ?? ''),
+              amount:
+                typeof line.line_total === 'number'
+                  ? line.line_total
+                  : line.line_total
                     ? parseFloat(String(line.line_total)) || 0
                     : 0,
-              }))
+            }))
             : Array.isArray(raw.breakdown)
-            ? raw.breakdown
-            : [];
+              ? raw.breakdown
+              : [];
 
         const estimated_delivery_time: string =
           raw.estimated_delivery_time ||
@@ -285,26 +310,49 @@ const App: React.FC = () => {
       : 0;
 
     return {
+      // Basic info
       copies: bookPricePayload.copies,
       interior_pages: interiorPages,
-      cover_pages: 4,
-      book_size: String(bookPricePayload.book_size) as any,
-      // BPE usa "portrait" / "landscape" en minúsculas
-      orientation: String(bookPricePayload.orientation).toLowerCase() as any,
-      interior_print: String(bookPricePayload.interior_print) as any,
-      cover_print: String(bookPricePayload.cover_print) as any,
+      cover_pages: bookPricePayload.cover_pages,
+      book_size: bookPricePayload.book_size,
+      orientation: bookPricePayload.orientation,
+      delivery_country: bookPricePayload.delivery_country.trim().toUpperCase(),
+
+      // Print options
+      interior_print: bookPricePayload.interior_print,
+      cover_print: bookPricePayload.cover_print,
+      cover_print_rev: bookPricePayload.cover_print_rev,
+
+      // Paper types
+      paper_type_interior: bookPricePayload.paper_type_interior,
+      paper_type_cover: bookPricePayload.paper_type_cover,
+      paper_type_endpaper: bookPricePayload.paper_type_endpaper,
+
+      // Paper weights
       paper_weight_interior: bookPricePayload.paper_weight_interior,
       paper_weight_cover: bookPricePayload.paper_weight_cover,
-      binding_method: String(bookPricePayload.binding_method) as any,
-      // Para el BPE, pasamos las terminaciones como string CSV
-      finishing_options: Array.isArray(bookPricePayload.finishing_options)
-        ? bookPricePayload.finishing_options.join(', ')
-        : String(bookPricePayload.finishing_options),
-      delivery_country:
-        bookPricePayload.delivery_country.trim().toUpperCase(),
-      endpapers: String(bookPricePayload.endpapers) as any,
-      endpapers_print: String(bookPricePayload.endpapers_print) as any,
       paper_weight_endpapers: bookPricePayload.paper_weight_endpapers,
+
+      // PMS colors
+      pms_interior: bookPricePayload.pms_interior,
+      pms_cover: bookPricePayload.pms_cover,
+
+      // Binding & finishing
+      binding_method: bookPricePayload.binding_method,
+      finishing_options: bookPricePayload.finishing_options,
+      uv_varnish: bookPricePayload.uv_varnish,
+
+      // Endpapers
+      endpapers: bookPricePayload.endpapers,
+      endpapers_print: bookPricePayload.endpapers_print,
+
+      // Extra costs
+      extra_book: bookPricePayload.extra_book,
+      extra_section: bookPricePayload.extra_section,
+      extra_fixed: bookPricePayload.extra_fixed,
+      extra_variable: bookPricePayload.extra_variable,
+
+      // Debug (optional)
       ...(bookPricePayload.debug ? { debug: 1 as const } : {}),
     };
   };
@@ -398,9 +446,9 @@ const App: React.FC = () => {
 
         const bpeParams =
           bpeData &&
-          typeof bpeData === 'object' &&
-          bpeData.params &&
-          typeof bpeData.params === 'object'
+            typeof bpeData === 'object' &&
+            bpeData.params &&
+            typeof bpeData.params === 'object'
             ? bpeData.params
             : {};
 
