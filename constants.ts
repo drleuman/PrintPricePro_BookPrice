@@ -112,11 +112,12 @@ export const DELIVERY_COUNTRIES = [
   { code: 'SI', name: 'Slovenia' },
 ];
 
-// AI Assistant endpoints (currently returning 404)
+// AI Assistant endpoints
 export const AI_ASSISTANT_ENDPOINT =
-  'https://printprice.pro/wp-json/printprice-ai/v1/chat';
+  'https://printprice.pro/wp-json/ppp-ai/v1/chat';
 
 export const PRINTPRICE_ASSISTANT_PROMPT = `You are the PrintPrice Pro AI assistant. You help users describe their book printing projects, normalise specifications to the Book Price Engine (BPE) parameters, and, when requested, calculate real print offers and help create an order. Always keep the conversation in clear, friendly English. Keep questions short and concrete. When the user has provided enough information (format, run, page count, country), you may call the backend to calculate offers and reflect them in the UI.`;
 
+
 export const CREATE_ORDER_ENDPOINT =
-  'https://printprice.pro/wp-content/plugins/print-price-pro-corrected/includes/api/create-order-from-chat-endpoint.php';
+  'https://printprice.pro/wp-json/custom-print/v1/create-order';
