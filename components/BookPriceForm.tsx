@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   BOOK_SIZES,
   ORIENTATIONS,
-  INTERIOR_PRINT_MODES,
-  COVER_PRINT_MODES,
+  INTERIOR_PRINT_OPTIONS,
+  COVER_PRINT_OPTIONS,
   BINDING_METHODS,
   FINISHING_OPTIONS,
   DELIVERY_COUNTRIES,
 } from '../constants';
+
 import { InitialBookPricePayload } from '../types';
 
 interface BookPriceFormProps {
@@ -176,7 +177,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
           >
-            {INTERIOR_PRINT_MODES.map((m) => (
+            {INTERIOR_PRINT_OPTIONS.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
@@ -195,7 +196,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
           >
-            {COVER_PRINT_MODES.map((m) => (
+            {COVER_PRINT_OPTIONS.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>

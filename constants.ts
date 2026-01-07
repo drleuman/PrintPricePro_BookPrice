@@ -47,7 +47,8 @@ export const DELIVERY_COUNTRIES = [
 ];
 
 export const ENDPAPERS_OPTIONS: EndpapersOption[] = ['None', 'White', 'Black', 'Custom'];
-export const ENDPAPERS_PRINT_OPTIONS: EndpapersPrint[] = ['4/4', '1/1', 'None'];\n
+export const ENDPAPERS_PRINT_OPTIONS: EndpapersPrint[] = ['4/4', '1/1', 'None'];
+
 export const AI_ASSISTANT_ENDPOINT =
   'https://printprice.pro/wp-json/printprice-ai/v1/chat';
 
@@ -55,4 +56,3 @@ export const PRINTPRICE_ASSISTANT_PROMPT = `You are the PrintPrice Pro AI assist
 
 export const CREATE_ORDER_ENDPOINT =
   'https://printprice.pro/wp-content/plugins/print-price-pro-corrected/includes/api/create-order-from-chat-endpoint.php';
-\n
