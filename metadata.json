@@ -1,0 +1,5 @@
+{
+  "name": "PDF Book Price Calculator",
+  "description": "Upload a PDF or enter specifications to get print price estimates from the Book Price Engine API.",
+  "requestFramePermissions": []
+}
