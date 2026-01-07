@@ -537,14 +537,16 @@ const App: React.FC = () => {
 
         const data = await res.json();
 
-        if (data?.order_url) {
-          window.location.href = data.order_url;
-        } else if (data?.data?.order_url) {
-          window.location.href = data.data.order_url;
+        // Redirect to WooCommerce cart instead of order page
+        // The order is created silently in the background
+        if (data?.cart_url) {
+          window.location.href = data.cart_url;
+        } else if (data?.data?.cart_url) {
+          window.location.href = data.data.cart_url;
         } else {
-          setOrderError(
-            'Order created, but no order URL was returned by the API.'
-          );
+          // Fallback: redirect to cart page directly
+          // The backend should add the item to cart automatically
+          window.location.href = 'https://printprice.pro/cart/';
         }
       } catch (err: any) {
         console.error('Error creating print order', err);
