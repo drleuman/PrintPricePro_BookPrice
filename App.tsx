@@ -309,6 +309,15 @@ const App: React.FC = () => {
       ? interiorPagesRaw
       : 0;
 
+    // Validate PMS colors (must be 1-3, default to 1 if invalid)
+    const validatePMS = (value: number): number => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 1 || num > 3) {
+        return 1; // Default to 1 if invalid
+      }
+      return Math.floor(num); // Ensure integer
+    };
+
     return {
       // Basic info
       copies: bookPricePayload.copies,
@@ -333,9 +342,9 @@ const App: React.FC = () => {
       paper_weight_cover: bookPricePayload.paper_weight_cover,
       paper_weight_endpapers: bookPricePayload.paper_weight_endpapers,
 
-      // PMS colors
-      pms_interior: bookPricePayload.pms_interior,
-      pms_cover: bookPricePayload.pms_cover,
+      // PMS colors (validated to ensure 1-3)
+      pms_interior: validatePMS(bookPricePayload.pms_interior),
+      pms_cover: validatePMS(bookPricePayload.pms_cover),
 
       // Binding & finishing
       binding_method: bookPricePayload.binding_method,
