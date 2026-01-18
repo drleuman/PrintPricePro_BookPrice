@@ -15,8 +15,31 @@ import {
   COVER_GSM_OPTIONS,
   ENDPAPERS_GSM_OPTIONS,
   DELIVERY_COUNTRIES,
+  COVER_PAGES_OPTIONS,
+  PMS_OPTIONS,
 } from '../constants';
+import {
+  UserGroupIcon,
+  GlobeEuropeAfricaIcon,
+  Square3Stack3DIcon,
+  DocumentTextIcon,
+  BookOpenIcon,
+  ArrowsPointingOutIcon,
+  PaintBrushIcon,
+  ScaleIcon,
+  SwatchIcon,
+  TrophyIcon,
+  SparklesIcon,
+  SunIcon,
+  CogIcon,
+  BeakerIcon,
+  CurrencyDollarIcon,
+  TagIcon,
+  WrenchIcon,
+  AdjustmentsHorizontalIcon,
+} from '@heroicons/react/24/outline';
 import { InitialBookPricePayload } from '../types';
+import { t } from '../i18n/en';
 
 interface BookPriceFormProps {
   initialPayload: InitialBookPricePayload;
@@ -24,6 +47,7 @@ interface BookPriceFormProps {
   onCalculatePrice: () => void;
   loading: boolean;
   hasPdf: boolean;
+  isAdmin?: boolean;
 }
 
 const BookPriceForm: React.FC<BookPriceFormProps> = ({
@@ -32,6 +56,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   onCalculatePrice,
   loading,
   hasPdf,
+  isAdmin = false,
 }) => {
   const [payload, setPayload] = useState<InitialBookPricePayload>(initialPayload);
 
@@ -69,352 +94,474 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   };
 
   return (
-    <div className="bg-white shadow-md rounded-lg p-4 sm:p-6">
-      <h2 className="text-sm font-semibold text-gray-800 mb-3">
+    <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 border border-gray-100">
+      <h2 className="text-xl font-bold text-gray-900 mb-8 flex items-center gap-3">
+        <WrenchIcon className="w-6 h-6 text-red-600" />
         Book specifications
       </h2>
 
-      <div className="flex flex-col gap-4 text-xs sm:text-sm">
-        {/* Row 1: Copies, Country, Size */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Copies
-            </label>
-            <input
-              type="number"
-              name="copies"
-              min={1}
-              value={payload.copies}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
+      <div className="flex flex-col gap-10 text-xs sm:text-sm">
+        {/* Section: General */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_general')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
           </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Delivery country (ISO2)
-            </label>
-            <select
-              name="delivery_country"
-              value={payload.delivery_country}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {DELIVERY_COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Book size
-            </label>
-            <select
-              name="book_size"
-              value={payload.book_size}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {BOOK_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Row 2: Interior pages, Cover pages, Orientation */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Interior pages
-            </label>
-            <input
-              type="number"
-              name="interior_pages"
-              min={0}
-              value={payload.interior_pages}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
-            {hasPdf && (
-              <p className="mt-1 text-[11px] text-gray-500">
-                Detected from PDF
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Cover pages
-            </label>
-            <input
-              type="number"
-              name="cover_pages"
-              min={0}
-              value={payload.cover_pages}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Orientation
-            </label>
-            <select
-              name="orientation"
-              value={payload.orientation}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {ORIENTATIONS.map((o) => (
-                <option key={o} value={o}>
-                  {o.charAt(0).toUpperCase() + o.slice(1)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Row 3: Interior print, Paper type interior, Interior GSM, PMS interior */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Interior print
-            </label>
-            <select
-              name="interior_print"
-              value={payload.interior_print}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {INTERIOR_PRINT_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {m === '4/4' ? '4/4 colors' : m === '2/2' ? '2/2 colors' : '1/1 bw'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Paper Interior (type)
-            </label>
-            <select
-              name="paper_type_interior"
-              value={payload.paper_type_interior}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {PAPER_TYPE_INTERIOR.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Interior Paper Weight (gsm)
-            </label>
-            <select
-              name="paper_weight_interior"
-              value={payload.paper_weight_interior}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {INTERIOR_GSM_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              PMS in interior
-            </label>
-            <input
-              type="number"
-              name="pms_interior"
-              min={1}
-              max={3}
-              value={payload.pms_interior}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
-          </div>
-        </div>
-
-        {/* Row 4: Cover print, Paper type cover, Cover GSM, PMS cover */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Cover print
-            </label>
-            <select
-              name="cover_print"
-              value={payload.cover_print}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {COVER_PRINT_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {m === '4/0' ? '4/0 standard' : m === '4/4' ? '4/4 both sides' : '1/0 bw'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Paper Cover (type)
-            </label>
-            <select
-              name="paper_type_cover"
-              value={payload.paper_type_cover}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {PAPER_TYPE_COVER.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Cover Paper Weight (gsm)
-            </label>
-            <select
-              name="paper_weight_cover"
-              value={payload.paper_weight_cover}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {COVER_GSM_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              PMS on cover
-            </label>
-            <input
-              type="number"
-              name="pms_cover"
-              min={1}
-              max={3}
-              value={payload.pms_cover}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
-          </div>
-        </div>
-
-        {/* Row 5: Cover print rev, Binding, Finishing, UV varnish */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Cover print reverse
-            </label>
-            <input
-              type="number"
-              name="cover_print_rev"
-              min={1}
-              max={6}
-              value={payload.cover_print_rev}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Binding method
-            </label>
-            <select
-              name="binding_method"
-              value={payload.binding_method}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {BINDING_METHODS.map((b) => (
-                <option key={b.value} value={b.value}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Finishing
-            </label>
-            <select
-              name="finishing_options"
-              value={payload.finishing_options}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-            >
-              {FINISHING_OPTIONS.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-medium text-gray-700 mb-1">
-              Extra UV Varnish
-            </label>
-            <div className="mt-1 flex items-center h-10">
-              <input
-                id="uv_varnish"
-                type="checkbox"
-                name="uv_varnish"
-                checked={payload.uv_varnish}
-                onChange={handleChange}
-                className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-600"
-              />
-              <label htmlFor="uv_varnish" className="ml-2 block text-sm text-gray-700">
-                {payload.uv_varnish ? 'Yes' : 'No'}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <UserGroupIcon className="w-5 h-5 text-red-600" />
+                {t('copies_label')}
               </label>
+              <input
+                type="number"
+                name="copies"
+                min={1}
+                value={payload.copies}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              />
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('copies_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <GlobeEuropeAfricaIcon className="w-5 h-5 text-red-600" />
+                {t('delivery_country_label')}
+              </label>
+              <select
+                name="delivery_country"
+                value={payload.delivery_country}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {DELIVERY_COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('delivery_country_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <Square3Stack3DIcon className="w-5 h-5 text-red-600" />
+                {t('book_size_label')}
+              </label>
+              <select
+                name="book_size"
+                value={payload.book_size}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {BOOK_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('book_size_help')}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <DocumentTextIcon className="w-5 h-5 text-red-600" />
+                {t('interior_pages_label')}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  name="interior_pages"
+                  min={0}
+                  value={payload.interior_pages}
+                  onChange={handleChange}
+                  className={`block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50 ${hasPdf ? 'border-green-300 ring-1 ring-green-100' : ''}`}
+                />
+                {hasPdf && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="text-[9px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-bold shadow-sm">PDF OK</span>
+                  </div>
+                )}
+              </div>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('interior_pages_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <BookOpenIcon className="w-5 h-5 text-red-600" />
+                {t('cover_pages_label')}
+              </label>
+              <select
+                name="cover_pages"
+                value={payload.cover_pages}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {COVER_PAGES_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v} pages
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_pages_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <ArrowsPointingOutIcon className="w-5 h-5 text-red-600" />
+                {t('orientation_label')}
+              </label>
+              <select
+                name="orientation"
+                value={payload.orientation}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {ORIENTATIONS.map((o) => (
+                  <option key={o} value={o}>
+                    {o.charAt(0).toUpperCase() + o.slice(1)}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('orientation_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Interior */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_interior')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <PaintBrushIcon className="w-5 h-5 text-red-600" />
+                {t('interior_print_label')}
+              </label>
+              <select
+                name="interior_print"
+                value={payload.interior_print}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {INTERIOR_PRINT_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === '4/4' ? '4/4 Full Color' : m === '2/2' ? '2/2 Colors' : '1/1 B/W'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('interior_print_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <CogIcon className="w-5 h-5 text-red-600" />
+                {t('paper_type_interior_label')}
+              </label>
+              <select
+                name="paper_type_interior"
+                value={payload.paper_type_interior}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {PAPER_TYPE_INTERIOR.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_type_interior_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <ScaleIcon className="w-5 h-5 text-red-600" />
+                {t('paper_weight_interior_label')}
+              </label>
+              <select
+                name="paper_weight_interior"
+                value={payload.paper_weight_interior}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {INTERIOR_GSM_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} gsm
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_weight_interior_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <SwatchIcon className="w-5 h-5 text-red-600" />
+                {t('pms_interior_label')}
+              </label>
+              <select
+                name="pms_interior"
+                value={payload.pms_interior}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {PMS_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v} color{v > 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('pms_interior_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Cover */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_cover')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <PaintBrushIcon className="w-5 h-5 text-red-600" />
+                {t('cover_print_label')}
+              </label>
+              <select
+                name="cover_print"
+                value={payload.cover_print}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {COVER_PRINT_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === '4/0' ? '4/0 Single-sided' : m === '4/4' ? '4/4 Both sides' : '1/0 B/W'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_print_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <BeakerIcon className="w-5 h-5 text-red-600" />
+                {t('paper_type_cover_label')}
+              </label>
+              <select
+                name="paper_type_cover"
+                value={payload.paper_type_cover}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {PAPER_TYPE_COVER.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_type_cover_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <ScaleIcon className="w-5 h-5 text-red-600" />
+                {t('paper_weight_cover_label')}
+              </label>
+              <select
+                name="paper_weight_cover"
+                value={payload.paper_weight_cover}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {COVER_GSM_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} gsm
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_weight_cover_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <SwatchIcon className="w-5 h-5 text-red-600" />
+                {t('pms_cover_label')}
+              </label>
+              <select
+                name="pms_cover"
+                value={payload.pms_cover}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {PMS_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v} color{v > 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('pms_cover_help')}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <AdjustmentsHorizontalIcon className="w-5 h-5 text-red-600" />
+                {t('cover_print_rev_label')}
+              </label>
+              <select
+                name="cover_print_rev"
+                value={payload.cover_print_rev}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {[1, 2, 3, 4, 5, 6].map((v) => (
+                  <option key={v} value={v}>
+                    {v} color{v > 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_print_rev_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Binding & Finishing */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_binding')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <TrophyIcon className="w-5 h-5 text-red-600" />
+                {t('binding_method_label')}
+              </label>
+              <select
+                name="binding_method"
+                value={payload.binding_method}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {BINDING_METHODS.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('binding_method_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <SparklesIcon className="w-5 h-5 text-red-600" />
+                {t('finishing_options_label')}
+              </label>
+              <select
+                name="finishing_options"
+                value={payload.finishing_options}
+                onChange={handleChange}
+                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+              >
+                {FINISHING_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('finishing_options_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                <SunIcon className="w-5 h-5 text-red-600" />
+                {t('uv_varnish_label')}
+              </label>
+              <div className="flex items-center gap-3 h-11">
+                <input
+                  id="uv_varnish"
+                  type="checkbox"
+                  name="uv_varnish"
+                  checked={payload.uv_varnish}
+                  onChange={handleChange}
+                  className="h-6 w-6 text-red-600 border-gray-200 rounded-lg focus:ring-red-500 transition-all duration-200"
+                />
+                <label htmlFor="uv_varnish" className="text-sm font-semibold text-gray-700">
+                  {payload.uv_varnish ? 'Apply Varnish' : 'No Varnish'}
+                </label>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                {t('uv_varnish_help')}
+              </p>
             </div>
           </div>
         </div>
 
         {/* Hardcover options (conditional) */}
         {isHardcover && (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">
-              Hardcover options
+          <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-inner">
+            <h3 className="text-xs font-bold text-gray-500 mb-6 uppercase tracking-widest flex items-center gap-3">
+              <WrenchIcon className="w-5 h-5" />
+              Hardcover Premium Options
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Endpapers
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <DocumentTextIcon className="w-5 h-5 text-red-600" />
+                  {t('endpapers_label')}
                 </label>
                 <select
                   name="endpapers"
                   value={payload.endpapers}
                   onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -422,18 +569,22 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('endpapers_help')}
+                </p>
               </div>
 
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Endpapers print
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <PaintBrushIcon className="w-5 h-5 text-red-600" />
+                  {t('endpapers_print_label')}
                 </label>
                 <select
                   name="endpapers_print"
                   value={payload.endpapers_print}
                   onChange={handleChange}
                   disabled={payload.endpapers === 'none'}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm disabled:opacity-50"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm disabled:opacity-50 transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_PRINT_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -441,17 +592,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('endpapers_print_help')}
+                </p>
               </div>
 
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Paper endpapers (type)
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <CogIcon className="w-5 h-5 text-red-600" />
+                  {t('paper_type_endpaper_label')}
                 </label>
                 <select
                   name="paper_type_endpaper"
                   value={payload.paper_type_endpaper}
                   onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {PAPER_TYPE_ENDPAPER.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -459,118 +614,148 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('paper_type_endpaper_help')}
+                </p>
               </div>
 
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Endpapers Paper Weight (gsm)
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <ScaleIcon className="w-5 h-5 text-red-600" />
+                  {t('paper_weight_endpapers_label')}
                 </label>
                 <select
                   name="paper_weight_endpapers"
                   value={payload.paper_weight_endpapers}
                   onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_GSM_OPTIONS.map((n) => (
                     <option key={n} value={n}>
-                      {n}
+                      {n} gsm
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('paper_weight_endpapers_help')}
+                </p>
               </div>
             </div>
-            <p className="mt-2 text-[11px] text-gray-500">
-              These options are sent as <code className="bg-gray-200 px-1 rounded">endpapers</code>, <code className="bg-gray-200 px-1 rounded">endpapers_print</code>, <code className="bg-gray-200 px-1 rounded">paper_type_endpaper</code>, <code className="bg-gray-200 px-1 rounded">paper_weight_endpapers</code>.
-            </p>
           </div>
         )}
 
         {/* Extra costs section */}
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">
-            Extra options
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">
-                Per book
-              </label>
-              <input
-                type="number"
-                name="extra_book"
-                min={0}
-                step={1}
-                value={payload.extra_book}
-                onChange={handleChange}
-                placeholder="0"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-              />
-            </div>
+        {isAdmin && (
+          <div className="bg-gradient-to-br from-red-50 to-white border border-red-100 rounded-2xl p-6 sm:p-8 shadow-sm">
+            <h3 className="text-xs font-bold text-red-900/40 mb-6 uppercase tracking-widest flex items-center gap-3">
+              <CurrencyDollarIcon className="w-5 h-5" />
+              {t('extra_options_title')}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <TagIcon className="w-5 h-5 text-red-600" />
+                  {t('extra_book_label')}
+                </label>
+                <input
+                  type="number"
+                  name="extra_book"
+                  min={0}
+                  step={1}
+                  value={payload.extra_book}
+                  onChange={handleChange}
+                  placeholder="0"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                />
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('extra_book_help')}
+                </p>
+              </div>
 
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">
-                Per section
-              </label>
-              <input
-                type="number"
-                name="extra_section"
-                min={0}
-                step={1}
-                value={payload.extra_section}
-                onChange={handleChange}
-                placeholder="0"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-              />
-            </div>
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <DocumentTextIcon className="w-5 h-5 text-red-600" />
+                  {t('extra_section_label')}
+                </label>
+                <input
+                  type="number"
+                  name="extra_section"
+                  min={0}
+                  step={1}
+                  value={payload.extra_section}
+                  onChange={handleChange}
+                  placeholder="0"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                />
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('extra_section_help')}
+                </p>
+              </div>
 
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">
-                Fixed
-              </label>
-              <input
-                type="number"
-                name="extra_fixed"
-                min={0}
-                max={999.99}
-                step={0.01}
-                value={payload.extra_fixed}
-                onChange={handleChange}
-                placeholder="0"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-              />
-            </div>
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <CurrencyDollarIcon className="w-5 h-5 text-red-600" />
+                  {t('extra_fixed_label')}
+                </label>
+                <input
+                  type="number"
+                  name="extra_fixed"
+                  min={0}
+                  max={999.99}
+                  step={0.01}
+                  value={payload.extra_fixed}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                />
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('extra_fixed_help')}
+                </p>
+              </div>
 
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">
-                Variable
-              </label>
-              <input
-                type="number"
-                name="extra_variable"
-                min={0}
-                max={999.99}
-                step={0.01}
-                value={payload.extra_variable}
-                onChange={handleChange}
-                placeholder="0"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-600 focus:ring-red-600 text-sm"
-              />
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <AdjustmentsHorizontalIcon className="w-5 h-5 text-red-600" />
+                  {t('extra_variable_label')}
+                </label>
+                <input
+                  type="number"
+                  name="extra_variable"
+                  min={0}
+                  max={999.99}
+                  step={0.01}
+                  value={payload.extra_variable}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                />
+                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                  {t('extra_variable_help')}
+                </p>
+              </div>
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-gray-500">
-            These options are sent as <code className="bg-gray-200 px-1 rounded">extra_book</code>, <code className="bg-gray-200 px-1 rounded">extra_section</code>, <code className="bg-gray-200 px-1 rounded">extra_fixed</code>, <code className="bg-gray-200 px-1 rounded">extra_variable</code>.
-          </p>
-        </div>
+        )}
       </div>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-12 flex justify-end">
         <button
           type="button"
           onClick={onCalculatePrice}
           disabled={loading}
-          className="inline-flex items-center rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-800 disabled:opacity-50"
+          className="inline-flex items-center rounded-xl bg-red-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:bg-red-700 focus:ring-4 focus:ring-red-100 disabled:opacity-50 transition-all duration-200 transform hover:-translate-y-0.5"
         >
-          {loading ? 'Calculating…' : 'Calculate price'}
+          {loading ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Calculating...
+            </>
+          ) : (
+            'Calculate price'
+          )}
         </button>
       </div>
     </div>

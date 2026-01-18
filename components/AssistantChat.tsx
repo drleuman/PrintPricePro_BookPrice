@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT } from '../constants';
 import { InitialBookPricePayload, BookPriceResponse } from '../types';
-import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
+import { PaperAirplaneIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
+import { t } from '../i18n/en';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -16,6 +17,7 @@ interface AssistantChatProps {
   offers: BookPriceResponse | null;
   onSpecsPatch: (patch: Partial<InitialBookPricePayload>) => void;
   onOffersUpdate: (offers: BookPriceResponse) => void;
+  onChooseOffer: (offer: any) => Promise<void>;
 }
 
 /**
@@ -40,13 +42,14 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   offers,
   onSpecsPatch,
   onOffersUpdate,
+  onChooseOffer,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
       content:
-        "Hello, I'm PrintPrice Pro AI Assistant. I can help you describe your book printing project and get real quotes. Note: The AI service may not be available yet - if so, please use the form below to enter your specifications manually.",
+        "Hello, I'm PrintPrice Pro AI Assistant. I can help you describe your book printing project and get real quotes.",
     },
   ]);
   const [input, setInput] = useState('');
@@ -157,36 +160,86 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   };
 
   return (
-    <section className="mb-6">
-      <div className="bg-white shadow-md rounded-lg p-4 sm:p-5 flex flex-col h-80">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-800">
-              PrintPrice Pro – AI Assistant
-            </h2>
-            <p className="text-xs text-gray-500">
-              Define presets, normalize specifications, calculate real quotes, and create the order.
-            </p>
+    <section className="mb-8">
+      <div className="bg-white shadow-xl rounded-2xl border border-gray-100 flex flex-col h-[450px] overflow-hidden">
+        <div className="bg-white px-6 py-4 flex items-center justify-between text-gray-900 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gray-50 rounded-xl">
+              <ChatBubbleLeftRightIcon className="w-5 h-5 text-gray-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold tracking-tight">
+                PrintPrice Pro – AI Assistant
+              </h2>
+              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                Expert knowledge at your service
+              </p>
+            </div>
           </div>
-          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-            ● Online
-          </span>
+          <div className="flex items-center gap-2 bg-green-50 px-2 py-1 rounded-full border border-green-100">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-green-700">Online</span>
+          </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-sm">
+        <div className="flex-1 overflow-y-auto space-y-4 p-6 scroll-smooth bg-gray-50/30">
           {messages.map((m) => (
             <div
               key={m.id}
               className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] rounded-lg px-3 py-2 ${m.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${m.role === 'user'
+                  ? 'bg-indigo-600 text-white rounded-tr-none'
+                  : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
                   }`}
               >
-                {m.content}
+                {m.content.includes('Project Summary') ? (
+                  <div className="space-y-4">
+                    <p className="font-semibold border-b border-gray-200 pb-1 mb-2">📋 {t('project_summary_title') || 'Project Summary'}</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                      {m.content.split('\n').filter(line => line.includes(':')).map((line, idx) => {
+                        const [label, value] = line.replace(/^[•\-\*]\s*/, '').split(':');
+                        return (
+                          <div key={idx} className="flex flex-col">
+                            <span className="text-gray-400 uppercase text-[9px] font-bold tracking-tight">{label.trim()}</span>
+                            <span className="font-medium text-gray-700">{value?.trim()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : m.content.includes('Offers:') || m.content.includes('Best offers:') ? (
+                  <div className="space-y-3">
+                    <p className="font-semibold border-b border-gray-200 pb-1 italic">✨ {t('recommended_offers') || 'Recommended Offers'}</p>
+                    <div className="space-y-2">
+                      {offers?.offers.map((offer) => (
+                        <button
+                          key={offer.id}
+                          onClick={() => onChooseOffer(offer)}
+                          className="w-full text-left bg-white hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm"
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-xs font-bold text-gray-800 group-hover:text-red-700">{offer.print_house}</span>
+                            <span className="text-xs font-bold text-red-600">{offer.total_cost.toLocaleString()} {offer.currency}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-gray-500 italic">
+                            <span>🚚 {offer.estimated_delivery_time || 'Check delivery'}</span>
+                          </div>
+                          <div className="mt-2 text-[9px] font-bold text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                            Select this offer →
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-line">{m.content}</div>
+                )}
               </div>
             </div>
           ))}
@@ -199,7 +252,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         </div>
 
         {/* Input */}
-        <div className="mt-3 flex items-center gap-2">
+        <div className="p-4 bg-white border-t border-gray-100 flex items-center gap-3">
           <textarea
             rows={1}
             value={input}
@@ -210,14 +263,14 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                 sendMessage();
               }
             }}
-            placeholder="Describe your book project..."
-            className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            placeholder="E.g., I want to print 500 copies of a hardcover novel in A5..."
+            className="flex-1 resize-none border-none focus:ring-0 text-sm py-2 placeholder-gray-400"
           />
           <button
             type="button"
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 transition-all duration-200"
           >
             {loading ? (
               <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />

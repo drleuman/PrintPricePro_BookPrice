@@ -111,6 +111,7 @@ async function detectPageIsColor(page: any): Promise<boolean> {
 }
 
 const App: React.FC = () => {
+  const [isAdmin, setIsAdmin] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
 
@@ -173,6 +174,12 @@ const App: React.FC = () => {
       (GlobalWorkerOptions as any).workerSrc = pdfWorkerSrc;
     } catch (e) {
       console.warn('Failed to configure PDF.js worker source', e);
+    }
+
+    // Check for admin param
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true') {
+      setIsAdmin(true);
     }
   }, []);
 
@@ -573,6 +580,7 @@ const App: React.FC = () => {
             setBookPricePayload((prev) => ({ ...prev, ...patch }))
           }
           onOffersUpdate={(newOffers) => setOffers(newOffers)}
+          onChooseOffer={handleChooseOffer}
         />
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
@@ -603,6 +611,7 @@ const App: React.FC = () => {
               onCalculatePrice={handleCalculatePrice}
               loading={loadingOffers}
               hasPdf={!!pdfFile}
+              isAdmin={isAdmin}
             />
           </div>
 

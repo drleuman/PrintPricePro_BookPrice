@@ -11,6 +11,8 @@ export const PDFJS_WORKER_CDN = '/workers/pdf.worker.min.mjs';
 // Form Options (matching smoke test exactly)
 
 export const BOOK_SIZES: BookSize[] = ['A6', 'A5', '170 × 240 mm', 'A4', '210 × 210 mm'];
+export const COVER_PAGES_OPTIONS = [2, 4, 6, 8];
+export const PMS_OPTIONS = [1, 2, 3, 4];
 
 export const ORIENTATIONS: Orientation[] = ['portrait', 'landscape'];
 
@@ -179,7 +181,7 @@ Use ONLY the prices returned by this API. Sort offers by total cost (cheapest fi
 
 4. CLEAR SUMMARY
 
-Before or after calculating, always give a short, clear summary:
+Before or after calculating, always give a short, clear summary. You MUST start this section with the exact title "Project Summary":
 
 Project Summary:
 • Copies: {copies}
@@ -197,12 +199,11 @@ Project Summary:
 
 5. DISPLAY BEST OFFERS
 
-Show up to 3 best offers sorted by total cost. Example:
+Show up to 3 best offers sorted by total cost. You MUST start this section with the exact title "Offers:":
 
 Offers:
-1) Pozkal web — €1120.00, delivery in 9 days
-2) RRD 2015 — €1250.00, delivery in 10 days
-3) Neo ALL 2015 — €1340.00, delivery in 11 days
+1) {PrintHouseName} — {TotalCost}, delivery in {Days} days
+... (Up to 3)
 
 Highlight clearly the BEST (cheapest) offer.
 If there are no offers, suggest adjusting gsm, binding or page-count multiples.
