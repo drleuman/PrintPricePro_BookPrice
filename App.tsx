@@ -24,7 +24,6 @@ import {
   BookPriceOffer,
 } from './types';
 
-import Header from './components/Header';
 import AssistantChat from './components/AssistantChat';
 import PdfUploadDropzone from './components/PdfUploadDropzone';
 import BookPriceForm from './components/BookPriceForm';
@@ -114,6 +113,7 @@ const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
+  const [payloadVersion, setPayloadVersion] = useState(0);
 
   const [bookPricePayload, setBookPricePayload] =
     useState<InitialBookPricePayload>({
@@ -128,25 +128,25 @@ const App: React.FC = () => {
       // Print options
       interior_print: '4/4',
       cover_print: '4/0',
-      cover_print_rev: 1,
+      cover_print_rev: 0,
 
       // Paper types
       paper_type_interior: 'offset',
-      paper_type_cover: 'mc',
+      paper_type_cover: 'artboard',
       paper_type_endpaper: 'offset',
 
       // Paper weights (gsm)
-      paper_weight_interior: 70,
-      paper_weight_cover: 120,
+      paper_weight_interior: 100,
+      paper_weight_cover: 240,
       paper_weight_endpapers: 115,
 
       // PMS colors
-      pms_interior: 1,
-      pms_cover: 1,
+      pms_interior: 0,
+      pms_cover: 0,
 
       // Binding & finishing
       binding_method: 'perfect_bound',
-      finishing_options: 'gloss_lam',
+      finishing_options: 'matt_lam_scratch_proof',
       uv_varnish: false,
 
       // Endpapers
@@ -224,6 +224,7 @@ const App: React.FC = () => {
         interior_print: (isColor ? '4/4' : '1/1') as any, // color vs B/N
         // La cubierta la dejamos como está (4/0) de momento
       }));
+      setPayloadVersion(v => v + 1);
     } catch (err) {
       console.error('Error loading PDF:', err);
       setError(t('pdf_load_error_message'));
@@ -316,11 +317,11 @@ const App: React.FC = () => {
       ? interiorPagesRaw
       : 0;
 
-    // Validate PMS colors (must be 1-3, default to 1 if invalid)
+    // Validate PMS colors (must be 0 or 1, default to 0 if invalid)
     const validatePMS = (value: number): number => {
       const num = Number(value);
-      if (!Number.isFinite(num) || num < 1 || num > 3) {
-        return 1; // Default to 1 if invalid
+      if (!Number.isFinite(num) || num < 0 || num > 1) {
+        return 0; // Default to 0 if invalid
       }
       return Math.floor(num); // Ensure integer
     };
@@ -369,7 +370,7 @@ const App: React.FC = () => {
       pms_interior: validatePMS(bookPricePayload.pms_interior),
       pms_cover: validatePMS(bookPricePayload.pms_cover),
 
-      // Binding & finishing (validated)
+      // Binding & finishing (validated + mapped)
       binding_method: bookPricePayload.binding_method,
       finishing_options: validateFinishing(bookPricePayload.finishing_options),
       uv_varnish: bookPricePayload.uv_varnish,
@@ -569,16 +570,21 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <Header />
-
       <main className="flex-1 container mx-auto px-4 py-6 sm:py-8">
         {/* Asistente IA arriba, a ancho completo */}
         <AssistantChat
           specs={bookPricePayload}
           offers={offers}
-          onSpecsPatch={(patch) =>
-            setBookPricePayload((prev) => ({ ...prev, ...patch }))
-          }
+          onSpecsPatch={(patch) => {
+            console.log("BEFORE PATCH specs:", bookPricePayload);
+            console.log("PATCH RECEIVED:", patch);
+            setBookPricePayload((prev) => {
+              const next = { ...prev, ...patch };
+              console.log("AFTER PATCH next:", next);
+              return next;
+            });
+            setPayloadVersion(v => v + 1);
+          }}
           onOffersUpdate={(newOffers) => setOffers(newOffers)}
           onChooseOffer={handleChooseOffer}
         />
@@ -607,6 +613,7 @@ const App: React.FC = () => {
 
             <BookPriceForm
               initialPayload={bookPricePayload}
+              payloadVersion={payloadVersion}
               onPayloadChange={handlePayloadChange}
               onCalculatePrice={handleCalculatePrice}
               loading={loadingOffers}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT } from '../constants';
+import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT, BOOK_PRICE_API_ENDPOINT } from '../constants';
 import { InitialBookPricePayload, BookPriceResponse } from '../types';
 import { PaperAirplaneIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
 import { t } from '../i18n/en';
@@ -10,6 +10,11 @@ interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  kind?: 'text' | 'offers';
+  ui?: {
+    show_offers?: boolean;
+    recommended_offer_ids?: string[];
+  };
 }
 
 interface AssistantChatProps {
@@ -32,9 +37,13 @@ interface AssistantChatProps {
  */
 interface AssistantResponse {
   reply: string;
-  specs_patch?: Partial<InitialBookPricePayload>;
+  specs_patch?: Partial<InitialBookPricePayload> | null;
   offers?: BookPriceResponse;
   order_url?: string;
+  ui?: {
+    show_offers?: boolean;
+    recommended_offer_ids?: string[];
+  };
 }
 
 const AssistantChat: React.FC<AssistantChatProps> = ({
@@ -75,7 +84,8 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       content: trimmed,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput('');
     setError(null);
     setLoading(true);
@@ -83,16 +93,15 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
     try {
       const payload = {
         system_prompt: PRINTPRICE_ASSISTANT_PROMPT,
-        messages: [
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-          { role: 'user', content: trimmed },
-        ],
-        // Current state of the UI: the model can use it
+        messages: nextMessages.map((m) => ({ role: m.role, content: m.content })),
         ui_state: {
-          specs,
+          ORIGINAL_SPECS_BEFORE_THIS_MESSAGE: specs,
           offers,
         },
       };
+
+      console.log("ASSISTANT PAYLOAD messages:", payload.messages.slice(-2));
+      console.log("ASSISTANT PAYLOAD specs:", payload.ui_state.ORIGINAL_SPECS_BEFORE_THIS_MESSAGE);
 
       const res = await fetch(AI_ASSISTANT_ENDPOINT, {
         method: 'POST',
@@ -101,7 +110,6 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       });
 
       if (!res.ok) {
-        // Handle 404 specifically - AI endpoint not available
         if (res.status === 404) {
           setMessages((prev) => [
             ...prev,
@@ -118,23 +126,198 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       }
 
       const data: AssistantResponse = await res.json();
+      console.log('AI Assistant Raw Response:', data);
 
-      // Response visible to the user
-      if (data.reply) {
+      let finalReply = data.reply || '';
+      let patch = data.specs_patch;
+
+      if (!finalReply && typeof data === 'string') {
+        finalReply = data;
+      }
+
+      // 1) Normalize the patch coming from the backend
+      if (patch) {
+        if (typeof patch.book_size === 'string') {
+          const bs = patch.book_size;
+          if (bs.includes('A5')) patch.book_size = 'A5' as any;
+          else if (bs.includes('A4')) patch.book_size = 'A4' as any;
+          else if (bs.includes('A6')) patch.book_size = 'A6' as any;
+          else if (bs.includes('170') && bs.includes('240')) patch.book_size = '170 x 240 mm' as any;
+          else if (bs.includes('210') && bs.includes('210')) patch.book_size = '210 x 210 mm' as any;
+        }
+        if (typeof patch.delivery_country === 'string') {
+          patch.delivery_country = patch.delivery_country.toUpperCase().substring(0, 2);
+        }
+      }
+
+      // 2) HEURISTIC EXTRACTION: Parse the USER'S message (trimmed)
+      const heuristicPatch: Partial<InitialBookPricePayload> = {};
+      const userLower = trimmed.toLowerCase();
+
+      // Copies: handle English and Spanish variants
+      const copiesMatch = userLower.match(/(\d+)\s*(copies|copys|copie|copias|cop)\b/);
+      if (copiesMatch) heuristicPatch.copies = Number(copiesMatch[1]);
+
+      // Pages: handle English and Spanish variants
+      const pagesMatch = userLower.match(/(\d+)\s*(pages?|pp|paginas?|páginas?|pag)\b/);
+      if (pagesMatch) heuristicPatch.interior_pages = Number(pagesMatch[1]);
+
+      // interior_print: B&W interior
+      if (/\b(b&w|bw|black\s*&\s*white|black\s*(and|y)\s*white|monochrome|grayscale|bn|b\/n)\b/.test(userLower)) {
+        heuristicPatch.interior_print = '1/1';
+      }
+
+      // cover_print: Color cover
+      const colorCoverMatch = /\b(cover\s*(in\s*)?color|colour\s*cover|color\s*cover|cubierta\s*(a\s*)?color)\b/.test(userLower);
+      if (colorCoverMatch) {
+        // Detect if they want both sides
+        const bothSides = /\b(both\s*sides|2\s*caras|dos\s*caras|4\/4)\b/.test(userLower);
+        heuristicPatch.cover_print = bothSides ? '4/4' : '4/0';
+      }
+
+      // Binding
+      if (userLower.includes('hard') || userLower.includes('dura')) heuristicPatch.binding_method = 'thread_sewn_hc';
+      if (userLower.includes('soft') || userLower.includes('blanda') || userLower.includes('perfect')) heuristicPatch.binding_method = 'perfect_bound';
+
+      // Size
+      if (userLower.includes('a5')) heuristicPatch.book_size = 'A5' as any;
+      if (userLower.includes('a4')) heuristicPatch.book_size = 'A4' as any;
+      if (userLower.includes('a6')) heuristicPatch.book_size = 'A6' as any;
+
+      // Delivery
+      if (userLower.includes('germany') || userLower.includes('alemania')) heuristicPatch.delivery_country = 'DE';
+      if (userLower.includes('spain') || userLower.includes('españa')) heuristicPatch.delivery_country = 'ES';
+      if (userLower.includes('uk') || userLower.includes('united kingdom') || userLower.includes('reino unido') || userLower.includes('england')) heuristicPatch.delivery_country = 'GB';
+
+      console.log('Backend Patch:', patch);
+      console.log('Heuristic Patch:', heuristicPatch);
+
+      // 3) MERGE & OVERRIDE: Heuristic overrides patch if conflict detected for critical fields
+      let finalPatch = { ...patch };
+
+      // Conflict guards: if user clearly stated intent, heuristic wins over backend patch
+      if (heuristicPatch.copies !== undefined) finalPatch.copies = heuristicPatch.copies;
+      if (heuristicPatch.interior_pages !== undefined) finalPatch.interior_pages = heuristicPatch.interior_pages;
+      if (heuristicPatch.binding_method !== undefined) finalPatch.binding_method = heuristicPatch.binding_method;
+      if (heuristicPatch.book_size !== undefined) finalPatch.book_size = heuristicPatch.book_size;
+      if (heuristicPatch.delivery_country !== undefined) finalPatch.delivery_country = heuristicPatch.delivery_country;
+      if (heuristicPatch.interior_print !== undefined) finalPatch.interior_print = heuristicPatch.interior_print;
+      if (heuristicPatch.cover_print !== undefined) finalPatch.cover_print = heuristicPatch.cover_print;
+
+      console.log('Final merged patch to apply:', finalPatch);
+      const appliedSpecs = { ...specs, ...finalPatch };
+
+      // 4) REPAIR HALLUCINATIONS in the reply text
+      // If the reply contains a Project Summary, we replace it with the ACTUAL data we are applying.
+      const summaryRegex = /Project Summary:[\s\S]*?(?=\n\n|\n[A-Z]|$)/i;
+
+      if (summaryRegex.test(finalReply)) {
+        const getBindingLabel = (m: string) => {
+          if (m === 'thread_sewn_hc') return 'Hardcover';
+          if (m === 'perfect_bound') return 'Softcover';
+          return m;
+        };
+        const getPrintLabel = (p: string) => {
+          if (p === '4/4') return 'Full Color (2 sides)';
+          if (p === '4/0') return 'Full Color (1 side)';
+          if (p === '1/1') return 'Black & White';
+          if (p === '1/0') return 'B&W (1 side)';
+          return p;
+        };
+
+        const truthSummary = `Project Summary:
+• Copies: ${appliedSpecs.copies}
+• Size: ${appliedSpecs.book_size} (${appliedSpecs.orientation})
+• Interior Pages: ${appliedSpecs.interior_pages}
+• Binding: ${getBindingLabel(appliedSpecs.binding_method)}
+• Interior Print: ${getPrintLabel(appliedSpecs.interior_print)}
+• Cover Print: ${getPrintLabel(appliedSpecs.cover_print)}
+• Delivery: ${appliedSpecs.delivery_country}`;
+
+        // Find and replace the summary block
+        finalReply = finalReply.replace(summaryRegex, truthSummary);
+
+        // Remove the "no offers" message if we are about to heal them
+        if (appliedSpecs.interior_pages > 0) {
+          finalReply = finalReply.replace(/It has not been possible to get offers at this time\./gi, '');
+        }
+      }
+
+      // Add text message
+      if (finalReply) {
         setMessages((prev) => [
           ...prev,
-          { id: `a-${Date.now()}`, role: 'assistant', content: data.reply },
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            content: finalReply.trim(),
+            kind: 'text',
+          },
         ]);
       }
 
-      // Specification patches (e.g., preset applied, normalization, etc.)
-      if (data.specs_patch) {
-        onSpecsPatch(data.specs_patch);
+      // 5) APPLY PATCH to form
+      if (Object.keys(finalPatch).length > 0) {
+        onSpecsPatch(finalPatch);
       }
 
-      // Offers calculated by the assistant backend (if it already called the BPE)
-      if (data.offers) {
-        onOffersUpdate(data.offers);
+      // 6) OFFERS AUTO-HEALING
+      // If backend returned no offers (likely because of hallucinated 0 pages),
+      // but we now have valid pages, fetch offers manually.
+      let healedOffers = data.offers;
+      if (!healedOffers?.offers?.length && appliedSpecs.interior_pages > 0) {
+        console.log('Backend failed to provide offers. Auto-healing offers using corrected specs...');
+        try {
+          const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(appliedSpecs),
+          });
+          if (bpeRes.ok) {
+            const bpeData = await bpeRes.json();
+            // Normalise manually as we do in App.tsx (simplified for internal use)
+            const rawOffers = bpeData.print_houses || bpeData.offers || [];
+            if (rawOffers.length > 0) {
+              healedOffers = {
+                success: true,
+                offers: rawOffers.map((o: any, idx: number) => ({
+                  id: String(o.house_id || o.id || `healed-${idx}`),
+                  print_house: o.print_house || 'Print house',
+                  total_cost: o.total_cost || o.total_price || 0,
+                  currency: o.currency || 'EUR',
+                  estimated_delivery_time: o.estimated_delivery_time || '',
+                  breakdown: o.lines || o.breakdown || [],
+                })),
+              };
+              onOffersUpdate(healedOffers);
+              console.log('Offers successfully healed:', healedOffers);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to heal offers:', e);
+        }
+      } else if (healedOffers) {
+        onOffersUpdate(healedOffers);
+      }
+
+      // 7) SHOW OFFERS if UI requested or we have them
+      const shouldShowOffers =
+        data.ui?.show_offers === true || !!healedOffers?.offers?.length;
+
+      if (shouldShowOffers) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-offers-${Date.now()}`,
+            role: 'assistant',
+            content: '',
+            kind: 'offers',
+            ui: {
+              show_offers: true,
+              recommended_offer_ids: data.ui?.recommended_offer_ids || [],
+            },
+          },
+        ]);
       }
 
       // Order created
@@ -213,28 +396,42 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                       })}
                     </div>
                   </div>
-                ) : m.content.includes('Offers:') || m.content.includes('Best offers:') ? (
+                ) : m.kind === 'offers' ? (
                   <div className="space-y-3">
                     <p className="font-semibold border-b border-gray-200 pb-1 italic">✨ {t('recommended_offers') || 'Recommended Offers'}</p>
                     <div className="space-y-2">
-                      {offers?.offers.map((offer) => (
-                        <button
-                          key={offer.id}
-                          onClick={() => onChooseOffer(offer)}
-                          className="w-full text-left bg-white hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm"
-                        >
-                          <div className="flex justify-between items-start mb-1">
-                            <span className="text-xs font-bold text-gray-800 group-hover:text-red-700">{offer.print_house}</span>
-                            <span className="text-xs font-bold text-red-600">{offer.total_cost.toLocaleString()} {offer.currency}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-gray-500 italic">
-                            <span>🚚 {offer.estimated_delivery_time || 'Check delivery'}</span>
-                          </div>
-                          <div className="mt-2 text-[9px] font-bold text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
-                            Select this offer →
-                          </div>
-                        </button>
-                      ))}
+                      {offers?.offers?.length ? (
+                        offers.offers.map((offer) => {
+                          const isRecommended = m.ui?.recommended_offer_ids?.includes(offer.id);
+                          return (
+                            <button
+                              key={offer.id}
+                              onClick={() => onChooseOffer(offer)}
+                              className={`w-full text-left bg-white hover:bg-red-50 border ${isRecommended ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm`}
+                            >
+                              {isRecommended && (
+                                <div className="absolute top-0 right-0 bg-red-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg uppercase tracking-widest">
+                                  Best Choice
+                                </div>
+                              )}
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="text-xs font-bold text-gray-800 group-hover:text-red-700">{offer.print_house}</span>
+                                <span className="text-xs font-bold text-red-600">{offer.total_cost.toLocaleString()} {offer.currency}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-500 italic">
+                                <span>🚚 {offer.estimated_delivery_time || 'Check delivery'}</span>
+                              </div>
+                              <div className="mt-2 text-[9px] font-bold text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                                Select this offer →
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs text-gray-400 italic py-2">
+                          Calculating offers... please wait.
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (

@@ -48,6 +48,7 @@ interface BookPriceFormProps {
   loading: boolean;
   hasPdf: boolean;
   isAdmin?: boolean;
+  payloadVersion?: number;
 }
 
 const BookPriceForm: React.FC<BookPriceFormProps> = ({
@@ -57,12 +58,13 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   loading,
   hasPdf,
   isAdmin = false,
+  payloadVersion = 0,
 }) => {
   const [payload, setPayload] = useState<InitialBookPricePayload>(initialPayload);
 
   useEffect(() => {
     setPayload(initialPayload);
-  }, [initialPayload]);
+  }, [payloadVersion]);
 
   // Check if hardcover is selected
   const isHardcover = payload.binding_method === 'thread_sewn_hc';
@@ -333,7 +335,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
-                    {v} color{v > 1 ? 's' : ''}
+                    {v === 0 ? 'None' : `${v} color`}
                   </option>
                 ))}
               </select>
@@ -432,7 +434,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
-                    {v} color{v > 1 ? 's' : ''}
+                    {v === 0 ? 'None' : `${v} color`}
                   </option>
                 ))}
               </select>
@@ -453,9 +455,9 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 onChange={handleChange}
                 className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
-                {[1, 2, 3, 4, 5, 6].map((v) => (
+                {[0, 1, 2, 3, 4, 5, 6].map((v) => (
                   <option key={v} value={v}>
-                    {v} color{v > 1 ? 's' : ''}
+                    {v === 0 ? 'None' : `${v} color${v > 1 ? 's' : ''}`}
                   </option>
                 ))}
               </select>

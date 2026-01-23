@@ -6,12 +6,12 @@ export type PaperTypeCover = 'mc' | 'artboard' | 'offset' | 'wfmc' | 'other' | '
 export type PaperTypeEndpaper = 'offset' | 'mc' | 'other' | 'none';
 
 // Book specifications
-export type BookSize = 'A6' | 'A5' | '170 × 240 mm' | 'A4' | '210 × 210 mm';
+export type BookSize = 'A6' | 'A5' | '170 x 240 mm' | 'A4' | '210 x 210 mm';
 export type Orientation = 'portrait' | 'landscape';
 export type InteriorPrint = '4/4' | '2/2' | '1/1';
 export type CoverPrint = '4/0' | '4/4' | '1/0';
 export type BindingMethod = 'perfect_bound' | 'thread_sewn_sc' | 'thread_sewn_hc' | 'saddle_stitch' | 'wire_o' | 'spiral';
-export type FinishingOption = 'gloss_lam' | 'matt_lam' | 'soft_touch' | '';
+export type FinishingOption = 'gloss_lam' | 'matt_lam' | 'soft_touch' | 'matt_lam_scratch_proof' | '';
 export type EndpapersOption = 'none' | 'standard';
 export type EndpapersPrint = '' | '1/1' | '4/4';
 
@@ -28,7 +28,7 @@ export interface InitialBookPricePayload {
   // Print options
   interior_print: InteriorPrint;
   cover_print: CoverPrint;
-  cover_print_rev: number; // 1-6
+  cover_print_rev: number; // 0-6
 
   // Paper types
   paper_type_interior: PaperTypeInterior;
@@ -41,8 +41,8 @@ export interface InitialBookPricePayload {
   paper_weight_endpapers: number;
 
   // PMS colors
-  pms_interior: number; // 1-3
-  pms_cover: number; // 1-3
+  pms_interior: number; // 0-3
+  pms_cover: number; // 0-3
 
   // Binding & finishing
   binding_method: BindingMethod;
@@ -67,14 +67,12 @@ export interface InitialBookPricePayload {
 export interface BookPricePayload extends InitialBookPricePayload { }
 
 // Response types
-export interface CostBreakdown {
-  printing: number;
-  paper: number;
-  binding: number;
-  finishing: number;
-  delivery: number;
-  other?: number;
+export interface BreakdownLine {
+  label: string;
+  amount: number;
 }
+
+export type CostBreakdown = BreakdownLine[];
 
 export interface BookPriceOffer {
   id: string;
