@@ -477,17 +477,17 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                     <p className="font-semibold border-b border-gray-200 pb-1 italic">✨ {t('recommended_offers') || 'Recommended Offers'}</p>
                     <div className="space-y-2">
                       {offers?.offers?.length ? (
-                        offers.offers.map((offer) => {
-                          const isRecommended = m.ui?.recommended_offer_ids?.includes(offer.id);
+                        [...offers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
+                          const isBest = index === 0;
                           return (
                             <button
                               key={offer.id}
                               onClick={() => onChooseOffer(offer)}
-                              className={`w-full text-left bg-white hover:bg-red-50 border ${isRecommended ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm`}
+                              className={`w-full text-left bg-white hover:bg-red-50 border ${isBest ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm`}
                             >
-                              {isRecommended && (
+                              {isBest && (
                                 <div className="absolute top-0 right-0 bg-red-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg uppercase tracking-widest">
-                                  Best Choice
+                                  Best Price
                                 </div>
                               )}
                               <div className="flex justify-between items-start mb-1">
