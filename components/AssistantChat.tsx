@@ -158,16 +158,20 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       const copiesMatch = userLower.match(/(\d+)\s*(copies|copys|copie|copias|cop)\b/);
       if (copiesMatch) heuristicPatch.copies = Number(copiesMatch[1]);
 
-      // Pages: handle English and Spanish variants
-      const pagesMatch = userLower.match(/(\d+)\s*(pages?|pp|paginas?|páginas?|pag)\b/);
+      // Interior Pages: handle English and Spanish variants
+      const pagesMatch = userLower.match(/(\d+)\s*(interior\s*)?(pages?|pp|paginas?|páginas?|pag)\b/);
       if (pagesMatch) heuristicPatch.interior_pages = Number(pagesMatch[1]);
 
-      // interior_print: B&W interior
+      // Interior Print: B&W interior
       if (/\b(b&w|bw|black\s*&\s*white|black\s*(and|y)\s*white|monochrome|grayscale|bn|b\/n)\b/.test(userLower)) {
         heuristicPatch.interior_print = '1/1';
       }
+      // Interior Print: Full color
+      if (/\b(interior\s*(in\s*)?color|interior\s*full\s*color|4\/4\s*interior)\b/.test(userLower)) {
+        heuristicPatch.interior_print = '4/4';
+      }
 
-      // cover_print: Color cover
+      // Cover Print: Color cover
       const colorCoverMatch = /\b(cover\s*(in\s*)?color|colour\s*cover|color\s*cover|cubierta\s*(a\s*)?color)\b/.test(userLower);
       if (colorCoverMatch) {
         // Detect if they want both sides
@@ -176,18 +180,75 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       }
 
       // Binding
-      if (userLower.includes('hard') || userLower.includes('dura')) heuristicPatch.binding_method = 'thread_sewn_hc';
-      if (userLower.includes('soft') || userLower.includes('blanda') || userLower.includes('perfect')) heuristicPatch.binding_method = 'perfect_bound';
+      if (userLower.includes('hardcover') || userLower.includes('hard cover') || userLower.includes('dura')) {
+        heuristicPatch.binding_method = 'thread_sewn_hc';
+      }
+      if (userLower.includes('softcover') || userLower.includes('soft cover') || userLower.includes('blanda') || userLower.includes('perfect')) {
+        heuristicPatch.binding_method = 'perfect_bound';
+      }
 
       // Size
       if (userLower.includes('a5')) heuristicPatch.book_size = 'A5' as any;
       if (userLower.includes('a4')) heuristicPatch.book_size = 'A4' as any;
       if (userLower.includes('a6')) heuristicPatch.book_size = 'A6' as any;
+      if (userLower.includes('170') && userLower.includes('240')) heuristicPatch.book_size = '170 x 240 mm' as any;
+
+      // Orientation
+      if (userLower.includes('landscape') || userLower.includes('horizontal')) heuristicPatch.orientation = 'landscape';
+      if (userLower.includes('portrait') || userLower.includes('vertical')) heuristicPatch.orientation = 'portrait';
 
       // Delivery
       if (userLower.includes('germany') || userLower.includes('alemania')) heuristicPatch.delivery_country = 'DE';
       if (userLower.includes('spain') || userLower.includes('españa')) heuristicPatch.delivery_country = 'ES';
       if (userLower.includes('uk') || userLower.includes('united kingdom') || userLower.includes('reino unido') || userLower.includes('england')) heuristicPatch.delivery_country = 'GB';
+
+      // GSM Detection (Interior, Cover, Endpapers)
+      // Interior GSM: "120 gsm interior" or "interior 120gsm"
+      const interiorGsmMatch = userLower.match(/(?:interior|pages?).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:interior|pages?)/);
+      if (interiorGsmMatch) {
+        const gsm = Number(interiorGsmMatch[1] || interiorGsmMatch[2]);
+        heuristicPatch.paper_weight_interior = gsm;
+      }
+
+      // Cover GSM: "250 gsm cover" or "cover 250gsm"
+      const coverGsmMatch = userLower.match(/(?:cover|cubierta).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:cover|cubierta)/);
+      if (coverGsmMatch) {
+        const gsm = Number(coverGsmMatch[1] || coverGsmMatch[2]);
+        heuristicPatch.paper_weight_cover = gsm;
+      }
+
+      // Endpapers GSM: "endpapers 150gsm" or "150 gsm endpapers"
+      const endpapersGsmMatch = userLower.match(/(?:endpapers?|guardas?).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:endpapers?|guardas?)/);
+      if (endpapersGsmMatch) {
+        const gsm = Number(endpapersGsmMatch[1] || endpapersGsmMatch[2]);
+        heuristicPatch.paper_weight_endpapers = gsm;
+      }
+
+      // Endpapers presence
+      if (/\b(endpapers?|guardas?)\b/.test(userLower)) {
+        heuristicPatch.endpapers = 'standard';
+
+        // Endpapers print: "endpapers 1/1" or "endpapers b&w"
+        if (/endpapers?.*?(1\/1|b&w|bw|black\s*&\s*white)/i.test(userLower)) {
+          heuristicPatch.endpapers_print = '1/1';
+        } else if (/endpapers?.*?(4\/4|color|colour)/i.test(userLower)) {
+          heuristicPatch.endpapers_print = '4/4';
+        }
+      }
+
+      // Paper Types
+      if (/\b(offset|woodfree|mc)\b/.test(userLower)) {
+        // Check context to determine if it's for interior, cover, or endpapers
+        if (/(?:interior|pages?).*?(?:offset|woodfree|mc)|(?:offset|woodfree|mc).*?(?:interior|pages?)/i.test(userLower)) {
+          heuristicPatch.paper_type_interior = 'offset';
+        }
+        if (/(?:endpapers?|guardas?).*?(?:offset|woodfree|mc)|(?:offset|woodfree|mc).*?(?:endpapers?|guardas?)/i.test(userLower)) {
+          heuristicPatch.paper_type_endpaper = 'offset';
+        }
+      }
+      if (/\b(artboard|estucado)\b/.test(userLower)) {
+        heuristicPatch.paper_type_cover = 'artboard';
+      }
 
       console.log('Backend Patch:', patch);
       console.log('Heuristic Patch:', heuristicPatch);
@@ -200,9 +261,24 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       if (heuristicPatch.interior_pages !== undefined) finalPatch.interior_pages = heuristicPatch.interior_pages;
       if (heuristicPatch.binding_method !== undefined) finalPatch.binding_method = heuristicPatch.binding_method;
       if (heuristicPatch.book_size !== undefined) finalPatch.book_size = heuristicPatch.book_size;
+      if (heuristicPatch.orientation !== undefined) finalPatch.orientation = heuristicPatch.orientation;
       if (heuristicPatch.delivery_country !== undefined) finalPatch.delivery_country = heuristicPatch.delivery_country;
       if (heuristicPatch.interior_print !== undefined) finalPatch.interior_print = heuristicPatch.interior_print;
       if (heuristicPatch.cover_print !== undefined) finalPatch.cover_print = heuristicPatch.cover_print;
+
+      // GSM overrides
+      if (heuristicPatch.paper_weight_interior !== undefined) finalPatch.paper_weight_interior = heuristicPatch.paper_weight_interior;
+      if (heuristicPatch.paper_weight_cover !== undefined) finalPatch.paper_weight_cover = heuristicPatch.paper_weight_cover;
+      if (heuristicPatch.paper_weight_endpapers !== undefined) finalPatch.paper_weight_endpapers = heuristicPatch.paper_weight_endpapers;
+
+      // Paper types
+      if (heuristicPatch.paper_type_interior !== undefined) finalPatch.paper_type_interior = heuristicPatch.paper_type_interior;
+      if (heuristicPatch.paper_type_cover !== undefined) finalPatch.paper_type_cover = heuristicPatch.paper_type_cover;
+      if (heuristicPatch.paper_type_endpaper !== undefined) finalPatch.paper_type_endpaper = heuristicPatch.paper_type_endpaper;
+
+      // Endpapers
+      if (heuristicPatch.endpapers !== undefined) finalPatch.endpapers = heuristicPatch.endpapers;
+      if (heuristicPatch.endpapers_print !== undefined) finalPatch.endpapers_print = heuristicPatch.endpapers_print;
 
       console.log('Final merged patch to apply:', finalPatch);
       const appliedSpecs = { ...specs, ...finalPatch };
