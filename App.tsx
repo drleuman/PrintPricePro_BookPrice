@@ -15,6 +15,8 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
   BOOK_PRICE_API_ENDPOINT,
   CREATE_ORDER_ENDPOINT,
+  BOOK_SIZES_PORTRAIT,
+  BOOK_SIZES_LANDSCAPE,
 } from './constants';
 
 import {
@@ -37,12 +39,11 @@ const PT_TO_MM = 25.4 / 72; // 1 punto PDF = 1/72 inch
 
 // Tabla sencilla de tamaños que reconoce tu app (BookSize)
 const KNOWN_SIZES = [
-  { code: 'A3', width: 297, height: 420 },
-  { code: 'A4', width: 210, height: 297 },
-  { code: 'A5', width: 148, height: 210 },
+  { code: 'A4 175-216 x 250-304 mm', width: 210, height: 297 },
+  { code: 'A5 148-152 x 210-215 mm', width: 148, height: 210 },
   { code: 'A6', width: 105, height: 148 },
-  { code: 'B5', width: 176, height: 250 },
-  { code: 'B6', width: 125, height: 176 },
+  { code: '175-216 x 175-200 mm', width: 210, height: 210 }, // Approx square
+  // Add other sizes if needed for inference
 ] as const;
 
 function inferSizeAndOrientationFromPage(page: any) {
@@ -59,7 +60,7 @@ function inferSizeAndOrientationFromPage(page: any) {
   const shortSide = Math.min(widthMm, heightMm);
   const longSide = Math.max(widthMm, heightMm);
 
-  let bestMatch: string = 'A5'; // Default to A5 instead of Custom
+  let bestMatch: string = 'A5 148-152 x 210-215 mm'; // Default to A5
 
   let bestDiff = Infinity;
 
@@ -78,7 +79,7 @@ function inferSizeAndOrientationFromPage(page: any) {
     widthMm,
     heightMm,
     orientation, // "portrait" | "landscape" (lowercase)
-    book_size: bestMatch, // "A4", "A5", etc.
+    book_size: bestMatch,
   };
 }
 
@@ -121,7 +122,7 @@ const App: React.FC = () => {
       copies: 1000,
       interior_pages: 120,
       cover_pages: 4,
-      book_size: 'A5',
+      book_size: 'A5 148-152 x 210-215 mm',
       orientation: 'portrait',
       delivery_country: 'ES',
 
@@ -146,7 +147,7 @@ const App: React.FC = () => {
 
       // Binding & finishing
       binding_method: 'perfect_bound',
-      finishing_options: 'matt_lam_scratch_proof',
+      finishing_options: 'matt_lam_scratch',
       uv_varnish: false,
 
       // Endpapers
@@ -335,11 +336,11 @@ const App: React.FC = () => {
     };
 
     // Validate finishing options (ensure never empty, default to empty string which backend normalizes to 'none')
-    const validateFinishing = (value: string | null | undefined): '' | 'gloss_lam' | 'matt_lam' | 'soft_touch' => {
+    const validateFinishing = (value: string | null | undefined): '' | 'gloss_lam' | 'matt_lam' | 'soft_touch' | 'matt_lam_scratch' => {
       if (!value) {
         return '';
       }
-      return value as '' | 'gloss_lam' | 'matt_lam' | 'soft_touch';
+      return value as '' | 'gloss_lam' | 'matt_lam' | 'soft_touch' | 'matt_lam_scratch';
     };
 
     return {
@@ -494,7 +495,7 @@ const App: React.FC = () => {
         // Garantizar book_size siempre presente
         if (!paramsPayload.book_size) {
           paramsPayload.book_size =
-            bpeParams.book_size || baseParams.book_size || 'A5';
+            bpeParams.book_size || baseParams.book_size || 'A5 148-152 x 210-215 mm';
         }
 
         const printHouses: any[] = Array.isArray(bpeData?.print_houses)

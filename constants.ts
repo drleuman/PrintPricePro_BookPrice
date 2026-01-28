@@ -8,7 +8,28 @@ export const BOOK_PRICE_API_ENDPOINT = 'https://printprice.pro/wp-json/bpe/v1/es
 
 // Form Options (matching smoke test exactly)
 
-export const BOOK_SIZES: BookSize[] = ['A6', 'A5', '170 x 240 mm', 'A4', '210 x 210 mm'];
+export const BOOK_SIZES_PORTRAIT: string[] = [
+  'A6',
+  '106-118 x 149-166 mm',
+  'A5 148-152 x 210-215 mm',
+  '153-170 x 216-244 mm',
+  'A4 175-216 x 250-304 mm',
+  '217-245 x 305-340 mm',
+  '175-216 x 175-200 mm',
+  '217-220 x 201-220 mm',
+  '235-290 x 235-325 mm',
+];
+
+export const BOOK_SIZES_LANDSCAPE: string[] = [
+  '148 x 104 mm',
+  '149-166 x 105-118 mm',
+  'A5 180-215 x 135-150 mm',
+  '216-240 x 151-165 mm',
+  'A4 270-297 x 119-214 mm',
+  'A4 270-297 x 215-240 mm',
+  '200-245 x 180-220 mm',
+];
+
 export const COVER_PAGES_OPTIONS = [2, 4, 6, 8];
 export const PMS_OPTIONS = [0, 1];
 
@@ -50,13 +71,14 @@ export const BINDING_METHODS: { value: BindingMethod; label: string }[] = [
   { value: 'thread_sewn_hc', label: 'Thread Sewn (hardcover)' },
   { value: 'saddle_stitch', label: 'Saddle Stitch' },
   { value: 'wire_o', label: 'Wire-O' },
-  { value: 'spiral', label: 'Spiral' },
+  { value: 'flexibound', label: 'Flexibound Integral' },
 ];
 
 // Finishing options (matching smoke test)
 export const FINISHING_OPTIONS: { value: FinishingOption; label: string }[] = [
   { value: 'gloss_lam', label: 'Gloss lam.' },
   { value: 'matt_lam', label: 'Matt lam.' },
+  { value: 'matt_lam_scratch', label: 'Matt lam. scratch proof' },
   { value: 'soft_touch', label: 'Soft Touch' },
   { value: '', label: 'None' },
 ];
@@ -69,6 +91,8 @@ export const ENDPAPERS_OPTIONS: { value: EndpapersOption; label: string }[] = [
 
 export const ENDPAPERS_PRINT_OPTIONS: { value: EndpapersPrint; label: string }[] = [
   { value: '', label: 'None' },
+  { value: '1/0', label: '1/0' },
+  { value: '4/0', label: '4/0' },
   { value: '1/1', label: '1/1' },
   { value: '4/4', label: '4/4' },
 ];
@@ -144,14 +168,16 @@ ALLOWED FIELD NAMES:
 copies, interior_pages, cover_pages, book_size, orientation, delivery_country, interior_print, cover_print, cover_print_rev, paper_type_interior, paper_weight_interior, paper_type_cover, paper_weight_cover, paper_type_endpaper, paper_weight_endpapers, pms_interior, pms_cover, binding_method, finishing_options, uv_varnish, endpapers, endpapers_print, extra_book, extra_section, extra_fixed, extra_variable
 
 STRICT VALUE MAPPING (Internal Enums):
-- book_size: "A6", "A5", "170 x 240 mm", "A4", "210 x 210 mm" (Use EXACT strings)
+- book_size: Use the EXACT string from the list. 
+  Portrait: "A6", "106-118 x 149-166 mm", "A5 148-152 x 210-215 mm", "153-170 x 216-244 mm", "A4 175-216 x 250-304 mm", "217-245 x 305-340 mm", "175-216 x 175-200 mm", "217-220 x 201-220 mm", "235-290 x 235-325 mm"
+  Landscape: "148 x 104 mm", "149-166 x 105-118 mm", "A5 180-215 x 135-150 mm", "216-240 x 151-165 mm", "A4 270-297 x 119-214 mm", "A4 270-297 x 215-240 mm", "200-245 x 180-220 mm"
 - orientation: "portrait", "landscape"
 - interior_print: "4/4", "2/2", "1/1"
 - cover_print: "4/0", "4/4", "1/0"
-- binding_method: "perfect_bound", "thread_sewn_sc", "thread_sewn_hc", "saddle_stitch", "wire_o", "spiral"
-- finishing_options: "gloss_lam", "matt_lam", "soft_touch", ""
+- binding_method: "perfect_bound", "thread_sewn_sc", "thread_sewn_hc", "saddle_stitch", "wire_o", "flexibound"
+- finishing_options: "gloss_lam", "matt_lam", "soft_touch", "matt_lam_scratch", ""
 - endpapers: "none", "standard"
-- endpapers_print: "", "1/1", "4/4"
+- endpapers_print: "", "1/0", "4/0", "1/1", "4/4"
 - delivery_country: ISO-2 code ONLY (e.g. "ES", "DE", "GB", "US")
 
 NORMALIZATION RULES (Internal use):

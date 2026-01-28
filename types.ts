@@ -6,14 +6,14 @@ export type PaperTypeCover = 'mc' | 'artboard' | 'offset' | 'wfmc' | 'other' | '
 export type PaperTypeEndpaper = 'offset' | 'mc' | 'other' | 'none';
 
 // Book specifications
-export type BookSize = 'A6' | 'A5' | '170 x 240 mm' | 'A4' | '210 x 210 mm';
+export type BookSize = string;
 export type Orientation = 'portrait' | 'landscape';
 export type InteriorPrint = '4/4' | '2/2' | '1/1';
 export type CoverPrint = '4/0' | '4/4' | '1/0';
-export type BindingMethod = 'perfect_bound' | 'thread_sewn_sc' | 'thread_sewn_hc' | 'saddle_stitch' | 'wire_o' | 'spiral';
-export type FinishingOption = 'gloss_lam' | 'matt_lam' | 'soft_touch' | 'matt_lam_scratch_proof' | '';
+export type BindingMethod = 'perfect_bound' | 'thread_sewn_sc' | 'thread_sewn_hc' | 'saddle_stitch' | 'wire_o' | 'flexibound';
+export type FinishingOption = 'gloss_lam' | 'matt_lam' | 'soft_touch' | 'matt_lam_scratch' | '';
 export type EndpapersOption = 'none' | 'standard';
-export type EndpapersPrint = '' | '1/1' | '4/4';
+export type EndpapersPrint = '' | '1/0' | '4/0' | '1/1' | '4/4';
 
 // Complete payload interface matching smoke test
 export interface InitialBookPricePayload {

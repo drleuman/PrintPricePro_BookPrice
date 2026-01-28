@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BOOK_SIZES,
+  BOOK_SIZES_PORTRAIT,
+  BOOK_SIZES_LANDSCAPE,
   ORIENTATIONS,
   INTERIOR_PRINT_OPTIONS,
   COVER_PRINT_OPTIONS,
@@ -68,6 +69,17 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
 
   // Check if hardcover is selected
   const isHardcover = payload.binding_method === 'thread_sewn_hc';
+
+  const currentBookSizes = payload.orientation === 'landscape' ? BOOK_SIZES_LANDSCAPE : BOOK_SIZES_PORTRAIT;
+
+  useEffect(() => {
+    const validSizes = payload.orientation === 'landscape' ? BOOK_SIZES_LANDSCAPE : BOOK_SIZES_PORTRAIT;
+    if (!validSizes.includes(payload.book_size)) {
+      const nextPayload = { ...payload, book_size: validSizes[0] };
+      setPayload(nextPayload);
+      onPayloadChange(nextPayload);
+    }
+  }, [payload.orientation]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -163,7 +175,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 onChange={handleChange}
                 className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
-                {BOOK_SIZES.map((size) => (
+                {currentBookSizes.map((size) => (
                   <option key={size} value={size}>
                     {size}
                   </option>
@@ -646,98 +658,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
           </div>
         )}
 
-        {/* Extra costs section */}
-        {isAdmin && (
-          <div className="bg-gradient-to-br from-red-50 to-white border border-red-100 rounded-2xl p-6 sm:p-8 shadow-sm">
-            <h3 className="text-xs font-bold text-red-900/40 mb-6 uppercase tracking-widest flex items-center gap-3">
-              <CurrencyDollarIcon className="w-5 h-5" />
-              {t('extra_options_title')}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-              <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <TagIcon className="w-5 h-5 text-red-600" />
-                  {t('extra_book_label')}
-                </label>
-                <input
-                  type="number"
-                  name="extra_book"
-                  min={0}
-                  step={1}
-                  value={payload.extra_book}
-                  onChange={handleChange}
-                  placeholder="0"
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
-                />
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
-                  {t('extra_book_help')}
-                </p>
-              </div>
 
-              <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <DocumentTextIcon className="w-5 h-5 text-red-600" />
-                  {t('extra_section_label')}
-                </label>
-                <input
-                  type="number"
-                  name="extra_section"
-                  min={0}
-                  step={1}
-                  value={payload.extra_section}
-                  onChange={handleChange}
-                  placeholder="0"
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
-                />
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
-                  {t('extra_section_help')}
-                </p>
-              </div>
-
-              <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <CurrencyDollarIcon className="w-5 h-5 text-red-600" />
-                  {t('extra_fixed_label')}
-                </label>
-                <input
-                  type="number"
-                  name="extra_fixed"
-                  min={0}
-                  max={999.99}
-                  step={0.01}
-                  value={payload.extra_fixed}
-                  onChange={handleChange}
-                  placeholder="0.00"
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
-                />
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
-                  {t('extra_fixed_help')}
-                </p>
-              </div>
-
-              <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <AdjustmentsHorizontalIcon className="w-5 h-5 text-red-600" />
-                  {t('extra_variable_label')}
-                </label>
-                <input
-                  type="number"
-                  name="extra_variable"
-                  min={0}
-                  max={999.99}
-                  step={0.01}
-                  value={payload.extra_variable}
-                  onChange={handleChange}
-                  placeholder="0.00"
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
-                />
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
-                  {t('extra_variable_help')}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="mt-12 flex justify-end">
