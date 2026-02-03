@@ -39,11 +39,12 @@ const PT_TO_MM = 25.4 / 72; // 1 punto PDF = 1/72 inch
 
 // Tabla sencilla de tamaños que reconoce tu app (BookSize)
 const KNOWN_SIZES = [
-  { code: 'A4 175-216 x 250-304 mm', width: 210, height: 297 },
-  { code: 'A5 148-152 x 210-215 mm', width: 148, height: 210 },
+  { code: 'A4', width: 210, height: 297 },
+  { code: 'A5', width: 148, height: 210 },
   { code: 'A6', width: 105, height: 148 },
-  { code: '175-216 x 175-200 mm', width: 210, height: 210 }, // Approx square
-  // Add other sizes if needed for inference
+  { code: '170 x 240 mm', width: 170, height: 240 },
+  { code: '200 x 200 mm', width: 200, height: 200 },
+  { code: '220 x 220 mm', width: 220, height: 220 },
 ] as const;
 
 function inferSizeAndOrientationFromPage(page: any) {
@@ -60,7 +61,7 @@ function inferSizeAndOrientationFromPage(page: any) {
   const shortSide = Math.min(widthMm, heightMm);
   const longSide = Math.max(widthMm, heightMm);
 
-  let bestMatch: string = 'A5 148-152 x 210-215 mm'; // Default to A5
+  let bestMatch: string = 'A5'; // Default to A5
 
   let bestDiff = Infinity;
 
@@ -122,7 +123,7 @@ const App: React.FC = () => {
       copies: 1000,
       interior_pages: 120,
       cover_pages: 4,
-      book_size: 'A5 148-152 x 210-215 mm',
+      book_size: 'A5',
       orientation: 'portrait',
       delivery_country: 'ES',
 
@@ -388,6 +389,14 @@ const App: React.FC = () => {
 
       // Debug (optional)
       ...(bookPricePayload.debug ? { debug: 1 as const } : {}),
+
+      // Custom dimensions (if book_size is "Custom")
+      ...(bookPricePayload.book_size === 'Custom' && bookPricePayload.custom_width && bookPricePayload.custom_height
+        ? {
+          custom_width: bookPricePayload.custom_width,
+          custom_height: bookPricePayload.custom_height,
+        }
+        : {}),
     };
   };
 
@@ -495,7 +504,7 @@ const App: React.FC = () => {
         // Garantizar book_size siempre presente
         if (!paramsPayload.book_size) {
           paramsPayload.book_size =
-            bpeParams.book_size || baseParams.book_size || 'A5 148-152 x 210-215 mm';
+            bpeParams.book_size || baseParams.book_size || 'A5';
         }
 
         const printHouses: any[] = Array.isArray(bpeData?.print_houses)

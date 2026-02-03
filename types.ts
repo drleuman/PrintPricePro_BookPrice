@@ -25,6 +25,10 @@ export interface InitialBookPricePayload {
   orientation: Orientation;
   delivery_country: string; // ISO2 code
 
+  // Custom dimensions (when book_size is "Custom")
+  custom_width?: number;
+  custom_height?: number;
+
   // Print options
   interior_print: InteriorPrint;
   cover_print: CoverPrint;

@@ -18,6 +18,8 @@ import {
   DELIVERY_COUNTRIES,
   COVER_PAGES_OPTIONS,
   PMS_OPTIONS,
+  DIMENSION_RANGES,
+  DIMENSION_HINTS,
 } from '../constants';
 import {
   UserGroupIcon,
@@ -62,6 +64,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   payloadVersion = 0,
 }) => {
   const [payload, setPayload] = useState<InitialBookPricePayload>(initialPayload);
+  const [customDimensionError, setCustomDimensionError] = useState<string>('');
 
   useEffect(() => {
     setPayload(initialPayload);
@@ -80,6 +83,45 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
       onPayloadChange(nextPayload);
     }
   }, [payload.orientation]);
+
+  // Validate custom dimensions
+  const isCustomSizeValid = (width: number, height: number, orientation: string): boolean => {
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+    const ranges = DIMENSION_RANGES[orientation as 'portrait' | 'landscape'] || [];
+    return ranges.some((r) => width >= r.wMin && width <= r.wMax && height >= r.hMin && height <= r.hMax);
+  };
+
+  const validateCustomDimensions = (): boolean => {
+    if (payload.book_size !== 'Custom') {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const w = payload.custom_width || 0;
+    const h = payload.custom_height || 0;
+
+    if (!w || !h) {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const valid = isCustomSizeValid(w, h, payload.orientation);
+    if (valid) {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const orientationName = payload.orientation === 'portrait' ? 'Portrait' : 'Landscape';
+    setCustomDimensionError(
+      `These dimensions are not available for ${orientationName} orientation. Please use one of the ranges listed above.`
+    );
+    return false;
+  };
+
+  // Validate on dimension or orientation change
+  useEffect(() => {
+    validateCustomDimensions();
+  }, [payload.custom_width, payload.custom_height, payload.orientation, payload.book_size]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -103,8 +145,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
       [name]: newValue,
     } as InitialBookPricePayload;
 
+    // Clear custom dimensions when switching away from Custom
+    if (name === 'book_size' && newValue !== 'Custom') {
+      nextPayload.custom_width = undefined;
+      nextPayload.custom_height = undefined;
+    }
+
     setPayload(nextPayload);
     onPayloadChange(nextPayload);
+  };
+
+  const handleCalculatePrice = () => {
+    if (payload.book_size === 'Custom' && !validateCustomDimensions()) {
+      return;
+    }
+    onCalculatePrice();
   };
 
   return (
@@ -135,7 +190,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 min={1}
                 value={payload.copies}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               />
               <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
                 {t('copies_help')}
@@ -151,7 +206,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="delivery_country"
                 value={payload.delivery_country}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {DELIVERY_COUNTRIES.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -173,7 +228,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="book_size"
                 value={payload.book_size}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {currentBookSizes.map((size) => (
                   <option key={size} value={size}>
@@ -186,6 +241,144 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               </p>
             </div>
           </div>
+
+          {/* Custom Dimensions Section */}
+          {payload.book_size === 'Custom' && (
+            <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-200 rounded-2xl p-6 shadow-inner mt-6 animate-slideDown">
+              <span className="text-xs font-bold text-blue-600 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <ArrowsPointingOutIcon className="w-4 h-4" />
+                📏 Custom Dimensions
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex flex-col">
+                  <label className="font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                    Width
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="custom_width"
+                      min={106}
+                      max={290}
+                      step={1}
+                      placeholder="210"
+                      value={payload.custom_width || ''}
+                      onChange={handleChange}
+                      className={`block w-full py-3 pl-5 pr-12 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white ${customDimensionError ? 'border-red-500 ring-1 ring-red-200' : ''
+                        }`}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-semibold pointer-events-none">
+                      mm
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                    Height
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="custom_height"
+                      min={149}
+                      max={340}
+                      step={1}
+                      placeholder="297"
+                      value={payload.custom_height || ''}
+                      onChange={handleChange}
+                      className={`block w-full py-3 pl-5 pr-12 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white ${customDimensionError ? 'border-red-500 ring-1 ring-red-200' : ''
+                        }`}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-semibold pointer-events-none">
+                      mm
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 bg-blue-50/50 rounded-lg p-3 border border-blue-100">
+                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <span>💡</span>
+                  <span>Available {payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Sizes</span>
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-600">
+                  {payload.orientation === 'portrait' ? (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">106-118 × 149-166 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">148-152 × 210-215 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">153-170 × 216-244 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">175-216 × 250-304 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">217-245 × 305-340 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">175-216 × 175-200 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">217-220 × 201-220 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">235-290 × 235-325 mm</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">149-166 × 105-118 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">180-215 × 135-150 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">216-240 × 151-165 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">270-297 × 190-214 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">270-297 × 215-240 mm</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-500">•</span>
+                        <span className="font-mono">200-245 × 180-220 mm</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="mt-2 text-[10px] text-gray-500 italic">
+                  Width × Height format
+                </p>
+              </div>
+
+              {customDimensionError && (
+                <p className="mt-3 text-xs text-red-600 font-semibold" role="alert">
+                  {customDimensionError}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="flex flex-col">
@@ -200,7 +393,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   min={0}
                   value={payload.interior_pages}
                   onChange={handleChange}
-                  className={`block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50 ${hasPdf ? 'border-green-300 ring-1 ring-green-100' : ''}`}
+                  className={`block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50 ${hasPdf ? 'border-green-300 ring-1 ring-green-100' : ''}`}
                 />
                 {hasPdf && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -222,7 +415,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="cover_pages"
                 value={payload.cover_pages}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {COVER_PAGES_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -244,7 +437,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="orientation"
                 value={payload.orientation}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {ORIENTATIONS.map((o) => (
                   <option key={o} value={o}>
@@ -277,7 +470,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="interior_print"
                 value={payload.interior_print}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {INTERIOR_PRINT_OPTIONS.map((m) => (
                   <option key={m} value={m}>
@@ -299,7 +492,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="paper_type_interior"
                 value={payload.paper_type_interior}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {PAPER_TYPE_INTERIOR.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -321,7 +514,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="paper_weight_interior"
                 value={payload.paper_weight_interior}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {INTERIOR_GSM_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -343,7 +536,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="pms_interior"
                 value={payload.pms_interior}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -376,7 +569,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="cover_print"
                 value={payload.cover_print}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {COVER_PRINT_OPTIONS.map((m) => (
                   <option key={m} value={m}>
@@ -398,7 +591,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="paper_type_cover"
                 value={payload.paper_type_cover}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {PAPER_TYPE_COVER.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -420,7 +613,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="paper_weight_cover"
                 value={payload.paper_weight_cover}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {COVER_GSM_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -442,7 +635,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="pms_cover"
                 value={payload.pms_cover}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -465,7 +658,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="cover_print_rev"
                 value={payload.cover_print_rev}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {[0, 1, 2, 3, 4, 5, 6].map((v) => (
                   <option key={v} value={v}>
@@ -498,7 +691,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="binding_method"
                 value={payload.binding_method}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {BINDING_METHODS.map((b) => (
                   <option key={b.value} value={b.value}>
@@ -520,7 +713,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 name="finishing_options"
                 value={payload.finishing_options}
                 onChange={handleChange}
-                className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
               >
                 {FINISHING_OPTIONS.map((f) => (
                   <option key={f.value} value={f.value}>
@@ -575,7 +768,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   name="endpapers"
                   value={payload.endpapers}
                   onChange={handleChange}
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -598,7 +791,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   value={payload.endpapers_print}
                   onChange={handleChange}
                   disabled={payload.endpapers === 'none'}
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm disabled:opacity-50 transition-all duration-200 bg-white"
+                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm disabled:opacity-50 transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_PRINT_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -620,7 +813,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   name="paper_type_endpaper"
                   value={payload.paper_type_endpaper}
                   onChange={handleChange}
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {PAPER_TYPE_ENDPAPER.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -642,7 +835,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   name="paper_weight_endpapers"
                   value={payload.paper_weight_endpapers}
                   onChange={handleChange}
-                  className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
                 >
                   {ENDPAPERS_GSM_OPTIONS.map((n) => (
                     <option key={n} value={n}>
@@ -664,7 +857,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
       <div className="mt-12 flex justify-end">
         <button
           type="button"
-          onClick={onCalculatePrice}
+          onClick={handleCalculatePrice}
           disabled={loading}
           className="inline-flex items-center rounded-xl bg-red-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:bg-red-700 focus:ring-4 focus:ring-red-100 disabled:opacity-50 transition-all duration-200 transform hover:-translate-y-0.5"
         >

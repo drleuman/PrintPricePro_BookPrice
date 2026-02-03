@@ -10,24 +10,22 @@ export const BOOK_PRICE_API_ENDPOINT = 'https://printprice.pro/wp-json/bpe/v1/es
 
 export const BOOK_SIZES_PORTRAIT: string[] = [
   'A6',
-  '106-118 x 149-166 mm',
-  'A5 148-152 x 210-215 mm',
-  '153-170 x 216-244 mm',
-  'A4 175-216 x 250-304 mm',
-  '217-245 x 305-340 mm',
-  '175-216 x 175-200 mm',
-  '217-220 x 201-220 mm',
-  '235-290 x 235-325 mm',
+  'A5',
+  'A4',
+  '170 x 240 mm',
+  '200 x 200 mm',
+  '220 x 220 mm',
+  'Custom',
 ];
 
 export const BOOK_SIZES_LANDSCAPE: string[] = [
-  '148 x 104 mm',
-  '149-166 x 105-118 mm',
-  'A5 180-215 x 135-150 mm',
-  '216-240 x 151-165 mm',
-  'A4 270-297 x 119-214 mm',
-  'A4 270-297 x 215-240 mm',
-  '200-245 x 180-220 mm',
+  'A6',
+  'A5',
+  'A4',
+  '170 x 240 mm',
+  '200 x 200 mm',
+  '220 x 220 mm',
+  'Custom',
 ];
 
 export const COVER_PAGES_OPTIONS = [2, 4, 6, 8];
@@ -104,6 +102,40 @@ export const COVER_GSM_OPTIONS = [120, 135, 200, 235, 240, 250, 280, 285, 300, 3
 
 export const ENDPAPERS_GSM_OPTIONS = [115, 120, 140, 150, 170];
 
+// Custom dimension validation ranges
+export interface DimensionRange {
+  wMin: number;
+  wMax: number;
+  hMin: number;
+  hMax: number;
+}
+
+export const DIMENSION_RANGES: Record<Orientation, DimensionRange[]> = {
+  portrait: [
+    { wMin: 106, wMax: 118, hMin: 149, hMax: 166 },
+    { wMin: 148, wMax: 152, hMin: 210, hMax: 215 },
+    { wMin: 153, wMax: 170, hMin: 216, hMax: 244 },
+    { wMin: 175, wMax: 216, hMin: 250, hMax: 304 },
+    { wMin: 217, wMax: 245, hMin: 305, hMax: 340 },
+    { wMin: 175, wMax: 216, hMin: 175, hMax: 200 },
+    { wMin: 217, wMax: 220, hMin: 201, hMax: 220 },
+    { wMin: 235, wMax: 290, hMin: 235, hMax: 325 },
+  ],
+  landscape: [
+    { wMin: 149, wMax: 166, hMin: 105, hMax: 118 },
+    { wMin: 180, wMax: 215, hMin: 135, hMax: 150 },
+    { wMin: 216, wMax: 240, hMin: 151, hMax: 165 },
+    { wMin: 270, wMax: 297, hMin: 190, hMax: 214 },
+    { wMin: 270, wMax: 297, hMin: 215, hMax: 240 },
+    { wMin: 200, wMax: 245, hMin: 180, hMax: 220 },
+  ],
+};
+
+export const DIMENSION_HINTS: Record<Orientation, string> = {
+  portrait: '106–118 × 149–166, 148–152 × 210–215, 153–170 × 216–244, 175–216 × 250–304, 217–245 × 305–340, 175–216 × 175–200, 217–220 × 201–220, 235–290 × 235–325.',
+  landscape: '149–166 × 105–118, 180–215 × 135–150, 216–240 × 151–165, 270–297 × 190–214, 270–297 × 215–240, 200–245 × 180–220.',
+};
+
 // Delivery countries
 export const DELIVERY_COUNTRIES = [
   { code: 'US', name: 'United States' },
@@ -169,8 +201,7 @@ copies, interior_pages, cover_pages, book_size, orientation, delivery_country, i
 
 STRICT VALUE MAPPING (Internal Enums):
 - book_size: Use the EXACT string from the list. 
-  Portrait: "A6", "106-118 x 149-166 mm", "A5 148-152 x 210-215 mm", "153-170 x 216-244 mm", "A4 175-216 x 250-304 mm", "217-245 x 305-340 mm", "175-216 x 175-200 mm", "217-220 x 201-220 mm", "235-290 x 235-325 mm"
-  Landscape: "148 x 104 mm", "149-166 x 105-118 mm", "A5 180-215 x 135-150 mm", "216-240 x 151-165 mm", "A4 270-297 x 119-214 mm", "A4 270-297 x 215-240 mm", "200-245 x 180-220 mm"
+  Portrait/Landscape: "A6", "A5", "A4", "170 x 240 mm", "200 x 200 mm", "220 x 220 mm", "Custom"
 - orientation: "portrait", "landscape"
 - interior_print: "4/4", "2/2", "1/1"
 - cover_print: "4/0", "4/4", "1/0"

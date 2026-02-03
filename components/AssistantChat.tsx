@@ -419,9 +419,9 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   };
 
   return (
-    <section className="mb-8">
-      <div className="bg-white shadow-xl rounded-2xl border border-gray-100 flex flex-col h-[450px] overflow-hidden">
-        <div className="bg-white px-6 py-4 flex items-center justify-between text-gray-900 border-b border-gray-100">
+    <section className="mb-12 mx-2 sm:mx-4">
+      <div className="bg-white shadow-xl rounded-2xl border border-gray-100 flex flex-col h-[480px] overflow-hidden transition-all duration-300">
+        <div className="bg-white pl-10 pr-6 py-5 flex items-center justify-between text-gray-900 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gray-50 rounded-xl">
               <ChatBubbleLeftRightIcon className="w-5 h-5 text-gray-400" />
@@ -445,7 +445,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto space-y-4 p-6 scroll-smooth bg-gray-50/30">
+        <div className="flex-1 overflow-y-auto space-y-4 pl-10 pr-6 py-6 scroll-smooth bg-gray-50/30">
           {messages.map((m) => (
             <div
               key={m.id}
@@ -525,7 +525,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t border-gray-100 flex items-center gap-3">
+        <div className="pl-10 pr-6 py-5 bg-white border-t border-gray-100 flex items-center gap-3">
           <textarea
             rows={1}
             value={input}
