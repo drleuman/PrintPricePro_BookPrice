@@ -258,8 +258,8 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     <input
                       type="number"
                       name="custom_width"
-                      min={106}
-                      max={290}
+                      min={payload.orientation === 'portrait' ? 100 : 120}
+                      max={297}
                       step={1}
                       placeholder="210"
                       value={payload.custom_width || ''}
@@ -281,7 +281,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     <input
                       type="number"
                       name="custom_height"
-                      min={149}
+                      min={120}
                       max={340}
                       step={1}
                       placeholder="297"
@@ -300,75 +300,10 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               <div className="mt-4 bg-blue-50/50 rounded-lg p-3 border border-blue-100">
                 <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1">
                   <span>💡</span>
-                  <span>Available {payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Sizes</span>
+                  <span>{payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Print Ranges</span>
                 </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-600">
-                  {payload.orientation === 'portrait' ? (
-                    <>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">106-118 × 149-166 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">148-152 × 210-215 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">153-170 × 216-244 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">175-216 × 250-304 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">217-245 × 305-340 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">175-216 × 175-200 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">217-220 × 201-220 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">235-290 × 235-325 mm</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">149-166 × 105-118 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">180-215 × 135-150 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">216-240 × 151-165 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">270-297 × 190-214 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">270-297 × 215-240 mm</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-blue-500">•</span>
-                        <span className="font-mono">200-245 × 180-220 mm</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-                <p className="mt-2 text-[10px] text-gray-500 italic">
-                  Width × Height format
+                <p className="text-[11px] text-gray-600 leading-relaxed font-mono">
+                  {DIMENSION_HINTS[payload.orientation]}
                 </p>
               </div>
 

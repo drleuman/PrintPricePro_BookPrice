@@ -140,14 +140,14 @@ const App: React.FC = () => {
       // Paper weights (gsm)
       paper_weight_interior: 100,
       paper_weight_cover: 240,
-      paper_weight_endpapers: 115,
+      paper_weight_endpapers: 140,
 
       // PMS colors
       pms_interior: 0,
       pms_cover: 0,
 
       // Binding & finishing
-      binding_method: 'perfect_bound',
+      binding_method: 'flexibound',
       finishing_options: 'matt_lam_scratch',
       uv_varnish: false,
 
@@ -322,7 +322,7 @@ const App: React.FC = () => {
     // Validate PMS colors (must be 0 or 1, default to 0 if invalid)
     const validatePMS = (value: number): number => {
       const num = Number(value);
-      if (!Number.isFinite(num) || num < 0 || num > 1) {
+      if (!Number.isFinite(num) || num < 0 || num > 3) {
         return 0; // Default to 0 if invalid
       }
       return Math.floor(num); // Ensure integer

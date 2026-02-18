@@ -9,7 +9,6 @@ export const BOOK_PRICE_API_ENDPOINT = 'https://printprice.pro/wp-json/bpe/v1/es
 // Form Options (matching smoke test exactly)
 
 export const BOOK_SIZES_PORTRAIT: string[] = [
-  'A6',
   'A5',
   'A4',
   '170 x 240 mm',
@@ -19,7 +18,6 @@ export const BOOK_SIZES_PORTRAIT: string[] = [
 ];
 
 export const BOOK_SIZES_LANDSCAPE: string[] = [
-  'A6',
   'A5',
   'A4',
   '170 x 240 mm',
@@ -29,7 +27,7 @@ export const BOOK_SIZES_LANDSCAPE: string[] = [
 ];
 
 export const COVER_PAGES_OPTIONS = [2, 4, 6, 8];
-export const PMS_OPTIONS = [0, 1];
+export const PMS_OPTIONS = [0, 1, 2, 3];
 
 export const ORIENTATIONS: Orientation[] = ['portrait', 'landscape'];
 
@@ -77,14 +75,14 @@ export const FINISHING_OPTIONS: { value: FinishingOption; label: string }[] = [
   { value: 'gloss_lam', label: 'Gloss lam.' },
   { value: 'matt_lam', label: 'Matt lam.' },
   { value: 'matt_lam_scratch', label: 'Matt lam. scratch proof' },
-  { value: 'soft_touch', label: 'Soft Touch' },
+  { value: 'soft_touch', label: 'Soft touch' },
   { value: '', label: 'None' },
 ];
 
 // Endpapers options
 export const ENDPAPERS_OPTIONS: { value: EndpapersOption; label: string }[] = [
   { value: 'none', label: 'None' },
-  { value: 'standard', label: 'Standard (blank)' },
+  { value: 'standard', label: 'Standard' },
 ];
 
 export const ENDPAPERS_PRINT_OPTIONS: { value: EndpapersPrint; label: string }[] = [
@@ -112,28 +110,36 @@ export interface DimensionRange {
 
 export const DIMENSION_RANGES: Record<Orientation, DimensionRange[]> = {
   portrait: [
-    { wMin: 106, wMax: 118, hMin: 149, hMax: 166 },
-    { wMin: 148, wMax: 152, hMin: 210, hMax: 215 },
-    { wMin: 153, wMax: 170, hMin: 216, hMax: 244 },
-    { wMin: 175, wMax: 216, hMin: 250, hMax: 304 },
-    { wMin: 217, wMax: 245, hMin: 305, hMax: 340 },
-    { wMin: 175, wMax: 216, hMin: 175, hMax: 200 },
-    { wMin: 217, wMax: 220, hMin: 201, hMax: 220 },
-    { wMin: 235, wMax: 290, hMin: 235, hMax: 325 },
+    { wMin: 100, wMax: 105, hMin: 120, hMax: 148 },
+    { wMin: 106, wMax: 119, hMin: 149, hMax: 166 },
+    { wMin: 120, wMax: 150, hMin: 167, hMax: 214 },
+    { wMin: 151, wMax: 170, hMin: 167, hMax: 245 },
+    { wMin: 175, wMax: 214, hMin: 250, hMax: 302 },
+    { wMin: 175, wMax: 245, hMin: 303, hMax: 340 },
+    { wMin: 160, wMax: 214, hMin: 170, hMax: 200 },
+    { wMin: 120, wMax: 150, hMin: 246, hMax: 289 },
+    { wMin: 175, wMax: 245, hMin: 201, hMax: 220 },
+    { wMin: 120, wMax: 167, hMin: 290, hMax: 325 },
+    { wMin: 250, wMax: 287, hMin: 250, hMax: 300 },
+    { wMin: 288, wMax: 297, hMin: 301, hMax: 340 }
   ],
   landscape: [
-    { wMin: 149, wMax: 166, hMin: 105, hMax: 118 },
-    { wMin: 180, wMax: 215, hMin: 135, hMax: 150 },
-    { wMin: 216, wMax: 240, hMin: 151, hMax: 165 },
-    { wMin: 270, wMax: 297, hMin: 190, hMax: 214 },
-    { wMin: 270, wMax: 297, hMin: 215, hMax: 240 },
-    { wMin: 200, wMax: 245, hMin: 180, hMax: 220 },
+    { wMin: 150, wMax: 214, hMin: 120, hMax: 148 },
+    { wMin: 215, wMax: 245, hMin: 149, hMax: 167 },
+    { wMin: 250, wMax: 297, hMin: 160, hMax: 212 },
+    { wMin: 297, wMax: 297, hMin: 215, hMax: 240 },
+    { wMin: 160, wMax: 214, hMin: 170, hMax: 200 },
+    { wMin: 120, wMax: 150, hMin: 246, hMax: 289 },
+    { wMin: 175, wMax: 245, hMin: 201, hMax: 220 },
+    { wMin: 120, wMax: 167, hMin: 290, hMax: 325 },
+    { wMin: 250, wMax: 287, hMin: 250, hMax: 300 },
+    { wMin: 288, wMax: 297, hMin: 301, hMax: 340 }
   ],
 };
 
 export const DIMENSION_HINTS: Record<Orientation, string> = {
-  portrait: '106–118 × 149–166, 148–152 × 210–215, 153–170 × 216–244, 175–216 × 250–304, 217–245 × 305–340, 175–216 × 175–200, 217–220 × 201–220, 235–290 × 235–325.',
-  landscape: '149–166 × 105–118, 180–215 × 135–150, 216–240 × 151–165, 270–297 × 190–214, 270–297 × 215–240, 200–245 × 180–220.',
+  portrait: '100–105 × 120–148, 106–119 × 149–166, 120–150 × 167–214, 151–170 × 167–245, 175–214 × 250–302, 175–245 × 303–340, 160–214 × 170–200, 120–150 × 246–289, 175–245 × 201–220, 120–167 × 290–325, 250–287 × 250–300, 288–297 × 301–340.',
+  landscape: '150–214 × 120–148, 215–245 × 149–167, 250–297 × 160–212, 297–297 × 215–240, 160–214 × 170–200, 120–150 × 246–289, 175–245 × 201–220, 120–167 × 290–325, 250–287 × 250–300, 288–297 × 301–340.',
 };
 
 // Delivery countries
