@@ -74,7 +74,7 @@ app.use(express.json({ limit: '100kb' })); // Very strict for standard routes
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // 3. Strict CORS with Allowlist
-const allowedOrigins = new Set(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://printprice.pro', 'https://app.printprice.pro']);
+const allowedOrigins = new Set(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://printprice.pro', 'https://app.printprice.pro', 'https://budget.printprice.pro']);
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl) or allowed origins
@@ -195,7 +195,18 @@ app.use('/api-proxy', async (req, res, next) => {
 
         // Construct the target URL by taking the part of the path after /api-proxy/
         const targetPath = req.url.startsWith('/') ? req.url.substring(1) : req.url;
-        const apiUrl = `${externalApiBaseUrl}/${targetPath}`;
+        // Determine target URL and specific headers
+        let apiUrl;
+        const isGemini = targetPath.startsWith('v1beta') || targetPath.startsWith('v1');
+
+        if (isGemini) {
+            apiUrl = `${externalApiBaseUrl}/${targetPath}`;
+            outgoingHeaders['X-Goog-Api-Key'] = apiKey;
+        } else {
+            // Default to WordPress proxy for wp-json and other paths
+            apiUrl = `https://printprice.pro/${targetPath}`;
+        }
+
         console.log(`HTTP Proxy: Forwarding request to ${apiUrl}`);
 
         // Prepare headers for the outgoing request

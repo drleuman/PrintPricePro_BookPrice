@@ -106,8 +106,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       const res = await fetch(AI_ASSISTANT_ENDPOINT, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-App-Proxy-Key': process.env.INTERNAL_PROXY_KEY || ''
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload),
       });
