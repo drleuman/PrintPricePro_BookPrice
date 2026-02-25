@@ -69,9 +69,15 @@ app.use(helmet({
 }));
 
 // 2. Global Request Limits (Internal & External)
-// Strict default limits
-app.use(express.json({ limit: '100kb' })); // Very strict for standard routes
-app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+// Strict default limits (Excluding proxy to allow larger JSON uploads)
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api-proxy')) return next();
+    express.json({ limit: '100kb' })(req, res, next);
+});
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api-proxy')) return next();
+    express.urlencoded({ extended: true, limit: '100kb' })(req, res, next);
+});
 
 // 3. Strict CORS with Allowlist
 const allowedOrigins = new Set(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://printprice.pro', 'https://app.printprice.pro', 'https://budget.printprice.pro']);
@@ -138,28 +144,34 @@ app.use('/api-proxy', proxyAuth);
 
 // 5. Enterprise Business Logic Validation (BPE)
 const validateBPE = (req, res, next) => {
-    if (req.method !== 'POST') return next();
+    try {
+        if (req.method !== 'POST') return next();
+        if (!req.body) return next();
 
-    const { copies, pages, format, paper } = req.body;
+        const { copies, pages, format, paper } = req.body;
 
-    // Skip if it's not a pricing request (e.g., chat message)
-    if (copies === undefined && pages === undefined) return next();
+        // Skip if it's not a pricing request (e.g., chat message)
+        if (copies === undefined && pages === undefined) return next();
 
-    // Strict numerical ranges to prevent pricing fraud
-    if (copies !== undefined && (typeof copies !== 'number' || copies < 1 || copies > 100000)) {
-        return res.status(400).json({ error: 'Validation Error: Invalid copies count (1-100,000)' });
+        // Strict numerical ranges to prevent pricing fraud
+        if (copies !== undefined && (typeof copies !== 'number' || copies < 1 || copies > 100000)) {
+            return res.status(400).json({ error: 'Validation Error: Invalid copies count (1-100,000)' });
+        }
+        if (pages !== undefined && (typeof pages !== 'number' || pages < 1 || pages > 5000)) {
+            return res.status(400).json({ error: 'Validation Error: Invalid page count (1-5,000)' });
+        }
+
+        // Type validation for enums
+        const allowedFormats = ['A4', 'A5', 'Executive', 'Custom'];
+        if (format && !allowedFormats.includes(format)) {
+            return res.status(400).json({ error: 'Validation Error: Invalid book format' });
+        }
+
+        next();
+    } catch (err) {
+        console.error('Validation Error in validateBPE:', err);
+        res.status(400).json({ error: 'Bad Request', details: 'Invalid payload structure' });
     }
-    if (pages !== undefined && (typeof pages !== 'number' || pages < 1 || pages > 5000)) {
-        return res.status(400).json({ error: 'Validation Error: Invalid page count (1-5,000)' });
-    }
-
-    // Type validation for enums
-    const allowedFormats = ['A4', 'A5', 'Executive', 'Custom'];
-    if (format && !allowedFormats.includes(format)) {
-        return res.status(400).json({ error: 'Validation Error: Invalid book format' });
-    }
-
-    next();
 };
 
 // Larger limit ONLY for proxy
@@ -207,7 +219,9 @@ app.use('/api-proxy', async (req, res, next) => {
             apiUrl = `https://printprice.pro/${targetPath}`;
         }
 
-        console.log(`HTTP Proxy: Forwarding request to ${apiUrl}`);
+        console.log(`HTTP Proxy: [${req.method}] ${req.url} -> ${apiUrl}`);
+
+        // ... (rest of logic)
 
         // Prepare headers for the outgoing request
         const outgoingHeaders = {};
@@ -528,4 +542,14 @@ server.on('upgrade', (request, socket, head) => {
         console.log(`WebSocket upgrade request for non-proxy path: ${pathname}. Closing connection.`);
         socket.destroy();
     }
+});
+
+// Final JSON Error Handler to prevent HTML leakage
+app.use((err, req, res, next) => {
+    console.error('SERVER ERROR:', err);
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({
+        error: 'Internal Server Error',
+        message: req.path.startsWith('/api-proxy') ? 'Proxy Failed' : err.message
+    });
 });
