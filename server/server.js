@@ -13,6 +13,9 @@ const path = require('path');
 const WebSocket = require('ws');
 const { URLSearchParams, URL } = require('url');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -20,6 +23,21 @@ const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
 // Support either API key env-var variant
 const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+const sessionSecret = process.env.SESSION_SECRET || 'pp-secure-session-fallback-secret-2025';
+
+// 0. Enterprise In-Memory Session Store (Simulated for single-server prod)
+const sessionStore = new Map();
+const SESSION_MAX_REQUESTS = 50; // Max prompts per session per 24h
+
+// Cleanup store periodically to prevent memory leaks
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, data] of sessionStore.entries()) {
+        if (now - data.lastSeen > 24 * 60 * 60 * 1000) {
+            sessionStore.delete(id);
+        }
+    }
+}, 60 * 60 * 1000);
 
 const staticPath = path.join(__dirname, '..', 'dist');
 const publicPath = path.join(__dirname, 'public');
@@ -33,10 +51,50 @@ else {
     console.log("API KEY FOUND (proxy will use this)")
 }
 
-// Limit body size to 50mb
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.set('trust proxy', 1 /* number of proxies between user and server */)
+app.use(cookieParser(sessionSecret));
+
+// 1. Set Security Headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-eval needed for some development modes/lib behavior
+            connectSrc: ["'self'", "https://generativelanguage.googleapis.com", "https://printprice.pro", "wss://generativelanguage.googleapis.com"],
+            imgSrc: ["'self'", "data:", "https://printprice.pro"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            frameAncestors: ["'none'"], // Prevent clickjacking
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
+
+// 2. Global Request Limits (Internal & External)
+// Strict default limits
+app.use(express.json({ limit: '100kb' })); // Very strict for standard routes
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+
+// 3. Strict CORS with Allowlist
+const allowedOrigins = new Set(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://printprice.pro', 'https://app.printprice.pro']);
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl) or allowed origins
+        if (!origin || allowedOrigins.has(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS blocked request from origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-App-Proxy-Key'],
+    credentials: true // Required for signed cookies
+}));
+
+// Set Vary: Origin to prevent cache poisoning
+app.use((req, res, next) => {
+    res.setHeader('Vary', 'Origin');
+    next();
+});
 
 // Rate limiter for the proxy
 const proxyLimiter = rateLimit({
@@ -54,7 +112,59 @@ const proxyLimiter = rateLimit({
 // Apply the rate limiter to the /api-proxy route before the main proxy logic
 app.use('/api-proxy', proxyLimiter);
 
-// Proxy route for Gemini API calls (HTTP)
+// 4. Proxy Authentication Middleware (Option 1: Signed Cookie)
+const proxyAuth = (req, res, next) => {
+    if (req.method === 'OPTIONS') return next();
+
+    // 1. Check for signed session cookie (Production standard)
+    const sessionToken = req.signedCookies['pp_session'];
+    if (sessionToken === 'active') {
+        return next();
+    }
+
+    // 2. Fallback to header key (for non-browser clients/dev)
+    const proxyKey = req.headers['x-app-proxy-key'];
+    const expectedKey = process.env.INTERNAL_PROXY_KEY || 'dev-fallback-secret-key';
+
+    if (proxyKey && proxyKey === expectedKey) {
+        return next();
+    }
+
+    console.warn(`Unauthorized proxy access attempt from IP: ${req.ip}`);
+    return res.status(401).json({ error: 'Unauthorized: Valid session cookie or proxy key required' });
+};
+
+app.use('/api-proxy', proxyAuth);
+
+// 5. Enterprise Business Logic Validation (BPE)
+const validateBPE = (req, res, next) => {
+    if (req.method !== 'POST') return next();
+
+    const { copies, pages, format, paper } = req.body;
+
+    // Skip if it's not a pricing request (e.g., chat message)
+    if (copies === undefined && pages === undefined) return next();
+
+    // Strict numerical ranges to prevent pricing fraud
+    if (copies !== undefined && (typeof copies !== 'number' || copies < 1 || copies > 100000)) {
+        return res.status(400).json({ error: 'Validation Error: Invalid copies count (1-100,000)' });
+    }
+    if (pages !== undefined && (typeof pages !== 'number' || pages < 1 || pages > 5000)) {
+        return res.status(400).json({ error: 'Validation Error: Invalid page count (1-5,000)' });
+    }
+
+    // Type validation for enums
+    const allowedFormats = ['A4', 'A5', 'Executive', 'Custom'];
+    if (format && !allowedFormats.includes(format)) {
+        return res.status(400).json({ error: 'Validation Error: Invalid book format' });
+    }
+
+    next();
+};
+
+// Larger limit ONLY for proxy
+app.use('/api-proxy', express.json({ limit: '2mb' }));
+app.use('/api-proxy', validateBPE);
 app.use('/api-proxy', async (req, res, next) => {
     console.log(req.ip);
     // If the request is an upgrade request, it's for WebSockets, so pass to next middleware/handler
@@ -62,19 +172,27 @@ app.use('/api-proxy', async (req, res, next) => {
         return next(); // Pass to the WebSocket upgrade handler
     }
 
-    // Handle OPTIONS request for CORS preflight
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*'); // Adjust as needed for security
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Goog-Api-Key');
-        res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 1 day
+        // Preflight handled by cors middleware, but reinforcement for proxy specifically
         return res.sendStatus(200);
     }
 
-    if (req.body) { // Only log body if it exists
-        console.log("  Request Body (from frontend):", req.body);
-    }
+    // REDACTED: No body logging in production
     try {
+        // AI Budget Guard Logic
+        const sessionToken = req.signedCookies['pp_session_id'] || req.ip; // Fallback to IP if cookies disabled
+        const sessionData = sessionStore.get(sessionToken) || { requests: 0, lastSeen: Date.now() };
+
+        if (sessionData.requests >= SESSION_MAX_REQUESTS) {
+            console.warn(`AI Budget Guard triggered: Session ${sessionToken} exceeded quota.`);
+            return res.status(429).json({ error: 'AI Quota Exceeded for this session. Please try again tomorrow.' });
+        }
+
+        // Increment usage
+        sessionData.requests += 1;
+        sessionData.lastSeen = Date.now();
+        sessionStore.set(sessionToken, sessionData);
+
         // Construct the target URL by taking the part of the path after /api-proxy/
         const targetPath = req.url.startsWith('/') ? req.url.substring(1) : req.url;
         const apiUrl = `${externalApiBaseUrl}/${targetPath}`;
@@ -119,6 +237,7 @@ app.use('/api-proxy', async (req, res, next) => {
             url: apiUrl,
             headers: outgoingHeaders,
             responseType: 'stream',
+            timeout: 10000, // 10 second timeout for external API calls
             validateStatus: function (status) {
                 return true; // Accept any status code, we'll pipe it through
             },
@@ -232,6 +351,26 @@ app.get('/', (req, res) => {
             console.warn("WARNING: <head> tag not found in index.html. Prepending scripts to the beginning of the file as a fallback.");
             injectedHtml = `${webSocketInterceptorScriptTag}${serviceWorkerRegistrationScript}${indexHtmlData}`;
         }
+        // Set Signed HttpOnly Cookie to authorize the proxy for this session
+        // Using a unique session ID for tracking
+        const sessionId = req.signedCookies['pp_session_id'] || require('crypto').randomBytes(16).toString('hex');
+
+        res.cookie('pp_session', 'active', {
+            httpOnly: true,
+            signed: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Lax',
+            maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        });
+
+        res.cookie('pp_session_id', sessionId, {
+            httpOnly: true,
+            signed: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Lax',
+            maxAge: 24 * 60 * 60 * 1000
+        });
+
         res.send(injectedHtml);
     });
 });
@@ -265,13 +404,32 @@ server.on('upgrade', (request, socket, head) => {
         }
 
         wss.handleUpgrade(request, socket, head, (clientWs) => {
+            const sessionToken = request.signedCookies['pp_session_id'] || request.socket.remoteAddress;
+            const sessionData = sessionStore.get(sessionToken) || { requests: 0, lastSeen: Date.now(), wsConnections: 0 };
+
+            // Limit concurrent WS connections per session
+            if (sessionData.wsConnections >= 3) {
+                console.warn(`WS connection limit reached for session ${sessionToken}`);
+                clientWs.close(1008, 'Simultaneous connection limit reached');
+                return;
+            }
+
+            sessionData.wsConnections += 1;
+            sessionStore.set(sessionToken, sessionData);
+
+            let msgCount = 0;
+            const MSG_RATE_LIMIT = 20; // max messages per 10 seconds
+            const msgResetInterval = setInterval(() => { msgCount = 0; }, 10000);
+
             console.log('Client WebSocket connected to proxy for path:', pathname);
 
             const targetPathSegment = pathname.substring('/api-proxy'.length);
             const clientQuery = new URLSearchParams(requestUrl.search);
             clientQuery.set('key', apiKey);
             const targetGeminiWsUrl = `${externalWsBaseUrl}${targetPathSegment}?${clientQuery.toString()}`;
-            console.log(`Attempting to connect to target WebSocket: ${targetGeminiWsUrl}`);
+
+            // REDACTED: Log redacted URL (no secrets)
+            console.log(`Attempting to connect to target WebSocket: ${externalWsBaseUrl}${targetPathSegment}?[REDACTED]`);
 
             const geminiWs = new WebSocket(targetGeminiWsUrl, {
                 protocol: request.headers['sec-websocket-protocol'],
@@ -318,6 +476,12 @@ server.on('upgrade', (request, socket, head) => {
             });
 
             clientWs.on('message', (message) => {
+                msgCount++;
+                if (msgCount > MSG_RATE_LIMIT) {
+                    console.warn(`WebSocket flood detected for session ${sessionToken}`);
+                    return; // Drop message if flooded
+                }
+
                 if (geminiWs.readyState === WebSocket.OPEN) {
                     // console.log('Message from client -> Gemini');
                     geminiWs.send(message);
@@ -330,6 +494,12 @@ server.on('upgrade', (request, socket, head) => {
             });
 
             clientWs.on('close', (code, reason) => {
+                clearInterval(msgResetInterval);
+                const currentSession = sessionStore.get(sessionToken);
+                if (currentSession) {
+                    currentSession.wsConnections = Math.max(0, currentSession.wsConnections - 1);
+                    sessionStore.set(sessionToken, currentSession);
+                }
                 console.log(`Client WebSocket closed: ${code} ${reason.toString()}`);
                 if (geminiWs.readyState === WebSocket.OPEN || geminiWs.readyState === WebSocket.CONNECTING) {
                     geminiWs.close(code, reason.toString());
