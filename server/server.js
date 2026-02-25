@@ -122,13 +122,21 @@ app.use('/api-proxy', proxyLimiter);
 const proxyAuth = (req, res, next) => {
     if (req.method === 'OPTIONS') return next();
 
-    // 1. Check for signed session cookie (Production standard)
+    // 1. Check for signed session cookie
     const sessionToken = req.signedCookies['pp_session'];
     if (sessionToken === 'active') {
         return next();
     }
 
-    // 2. Fallback to header key (for non-browser clients/dev)
+    // 2. Auto-initialize session for legitimate UI origins
+    // This handles cases where Apache/Nginx serves the HTML directly
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+        console.log(`Auto-initializing session for origin: ${origin}`);
+        return next();
+    }
+
+    // 3. Fallback to header key
     const proxyKey = req.headers['x-app-proxy-key'];
     const expectedKey = process.env.INTERNAL_PROXY_KEY || 'dev-fallback-secret-key';
 
@@ -136,8 +144,8 @@ const proxyAuth = (req, res, next) => {
         return next();
     }
 
-    console.warn(`Unauthorized proxy access attempt from IP: ${req.ip}`);
-    return res.status(401).json({ error: 'Unauthorized: Valid session cookie or proxy key required' });
+    console.warn(`Unauthorized proxy access attempt from IP: ${req.ip} (Origin: ${origin || 'none'})`);
+    return res.status(401).json({ error: 'Unauthorized: Session or Origin validation failed' });
 };
 
 app.use('/api-proxy', proxyAuth);
@@ -207,6 +215,16 @@ app.use('/api-proxy', async (req, res, next) => {
 
         // Construct the target URL by taking the part of the path after /api-proxy/
         const targetPath = req.url.startsWith('/') ? req.url.substring(1) : req.url;
+        // Prepare headers for the outgoing request
+        const outgoingHeaders = {};
+        // Copy most headers from the incoming request
+        for (const header in req.headers) {
+            // Exclude host-specific headers and others that might cause issues upstream
+            if (!['host', 'connection', 'content-length', 'transfer-encoding', 'upgrade', 'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions'].includes(header.toLowerCase())) {
+                outgoingHeaders[header] = req.headers[header];
+            }
+        }
+
         // Determine target URL and specific headers
         let apiUrl;
         const isGemini = targetPath.startsWith('v1beta') || targetPath.startsWith('v1');
@@ -220,21 +238,6 @@ app.use('/api-proxy', async (req, res, next) => {
         }
 
         console.log(`HTTP Proxy: [${req.method}] ${req.url} -> ${apiUrl}`);
-
-        // ... (rest of logic)
-
-        // Prepare headers for the outgoing request
-        const outgoingHeaders = {};
-        // Copy most headers from the incoming request
-        for (const header in req.headers) {
-            // Exclude host-specific headers and others that might cause issues upstream
-            if (!['host', 'connection', 'content-length', 'transfer-encoding', 'upgrade', 'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions'].includes(header.toLowerCase())) {
-                outgoingHeaders[header] = req.headers[header];
-            }
-        }
-
-        // Set the actual API key in the appropriate header
-        outgoingHeaders['X-Goog-Api-Key'] = apiKey;
 
         // Set Content-Type from original request if present (for relevant methods)
         if (req.headers['content-type'] && ['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
@@ -281,6 +284,26 @@ app.use('/api-proxy', async (req, res, next) => {
             res.setHeader(header, apiResponse.headers[header]);
         }
         res.status(apiResponse.status);
+
+        // Ensure session cookies are set if this was an auto-init request
+        if (!req.signedCookies['pp_session']) {
+            res.cookie('pp_session', 'active', {
+                httpOnly: true,
+                signed: true,
+                secure: process.env.NODE_ENV === 'production' || true, // Force secure for budget subdomain
+                sameSite: 'Lax',
+                maxAge: 24 * 60 * 60 * 1000
+            });
+            if (!req.signedCookies['pp_session_id']) {
+                res.cookie('pp_session_id', require('crypto').randomBytes(16).toString('hex'), {
+                    httpOnly: true,
+                    signed: true,
+                    secure: process.env.NODE_ENV === 'production' || true,
+                    sameSite: 'Lax',
+                    maxAge: 24 * 60 * 60 * 1000
+                });
+            }
+        }
 
 
         apiResponse.data.on('data', (chunk) => {

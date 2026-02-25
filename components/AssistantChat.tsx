@@ -109,6 +109,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload),
+        credentials: 'include'
       });
 
       if (!res.ok) {
