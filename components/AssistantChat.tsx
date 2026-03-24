@@ -521,7 +521,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                         const [label, value] = line.replace(/^[•\-\*]\s*/, '').split(':');
                         return (
                           <div key={idx} className="flex flex-col gap-1">
-                            <span className="text-corporate-muted uppercase text-[9px] font-technical font-black tracking-technical">{label.trim()}</span>
+                            <span className="text-corporate-text-secondary opacity-70 uppercase text-[9px] font-technical font-black tracking-technical">{label.trim()}</span>
                             <span className="font-technical text-corporate-text uppercase text-[11px] tracking-wider">{value?.trim()}</span>
                           </div>
                         );
@@ -592,7 +592,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               }
             }}
             placeholder="Describe system_project requirements..."
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-white placeholder-corporate-muted font-technical tracking-wide"
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-corporate-text placeholder-corporate-muted font-technical tracking-wide"
           />
           <button
             type="button"
