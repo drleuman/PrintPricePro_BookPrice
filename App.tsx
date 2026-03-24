@@ -201,6 +201,23 @@ const App: React.FC = () => {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
 
+  // Warmup Security Bridge (v5.2)
+  useEffect(() => {
+    const warmup = async () => {
+      try {
+        await fetch('/api/security/challenge', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload_context: 'warmup' })
+        });
+        console.log("🛡️ Infrastructure Safeguard Active. Assistant Bridge ready.");
+      } catch (e) {
+        console.warn('Fail-closed safeguard warmup delay.', e);
+      }
+    };
+    warmup();
+  }, []);
+
   // Configurar worker de PDF.js con la URL generada por Vite (misma versión que la API)
   useEffect(() => {
     try {
