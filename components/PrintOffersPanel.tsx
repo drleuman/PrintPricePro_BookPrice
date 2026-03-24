@@ -23,9 +23,9 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
 
   if (loading) {
     return (
-      <div className="bg-corporate-secondary p-8 border border-white/5 flex items-center gap-4">
+      <div className="bg-corporate-secondary p-8 border border-corporate-text/10 flex items-center gap-4">
         <div className="w-4 h-4 bg-corporate-accent animate-pulse" />
-        <p className="text-[0.6rem] font-technical font-black tracking-monolith text-corporate-text-secondary uppercase">
+        <p className="text-xs font-technical font-black tracking-monolith text-corporate-text-secondary uppercase">
           Calculating node_offers…
         </p>
       </div>
@@ -79,30 +79,30 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
             <div
               key={offer.id}
               className={`border p-8 flex flex-col gap-6 transition-all duration-300 relative group overflow-hidden ${
-                isBest ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-white/5 bg-corporate-primary/50'
+                isBest ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-corporate-text/10 bg-corporate-primary/50'
               }`}
             >
               <div className="absolute top-0 right-0 h-1 bg-corporate-accent w-0 group-hover:w-full transition-all duration-500" />
               <div className="flex justify-between items-start gap-6 relative z-10">
                 <div>
-                  <p className="text-[10px] font-technical font-black text-white uppercase tracking-monolith mb-2">
+                  <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith mb-2">
                     {offer.print_house}
                   </p>
                   {offer.estimated_delivery_time && (
                     <div className="flex items-center gap-2">
                       <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
-                      <p className="text-[0.6rem] font-technical text-corporate-muted uppercase tracking-wider">
+                      <p className="text-[10px] font-technical text-corporate-muted uppercase tracking-wider">
                         ETA: {offer.estimated_delivery_time}
                       </p>
                     </div>
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-3xl font-display font-black text-white tracking-tighter">
+                  <p className="text-3xl font-display font-black text-corporate-text tracking-tighter">
                     {offer.total_cost.toFixed(2)} <span className="text-corporate-accent text-sm">{offer.currency}</span>
                   </p>
                   {isBest && (
-                    <p className="text-[10px] text-corporate-accent font-technical font-black uppercase tracking-monolith mt-1">
+                    <p className="text-xs text-corporate-accent font-technical font-black uppercase tracking-monolith mt-1">
                       OPTIMAL_VALUE
                     </p>
                   )}
@@ -111,11 +111,11 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
 
               {/* Breakdown toggle */}
               {offer.breakdown && offer.breakdown.length > 0 && (
-                <div className="border-t border-white/5 pt-6 mt-4">
+                <div className="border-t border-corporate-text/10 pt-6 mt-4">
                   <button
                     type="button"
                     onClick={() => handleToggleBreakdown(offer.id)}
-                    className="text-[0.6rem] font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-2 hover:text-white transition-colors"
+                    className="text-xs font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-2 hover:text-corporate-text transition-colors"
                   >
                     {isOpen ? 'Close system_breakdown [-]' : 'View system_breakdown [+]'}
                   </button>
@@ -124,10 +124,10 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                       {offer.breakdown.map((line, idx) => (
                         <li
                           key={idx}
-                          className="flex justify-between border-b border-white/5 pb-2 last:border-none"
+                          className="flex justify-between border-b border-corporate-text/10 pb-2 last:border-none"
                         >
-                          <span className="text-[10px] font-technical text-corporate-text-secondary uppercase tracking-wider">{line.label}</span>
-                          <span className="text-[10px] font-technical text-white font-bold">
+                          <span className="text-[11px] font-technical text-corporate-text-secondary uppercase tracking-wider">{line.label}</span>
+                          <span className="text-[11px] font-technical text-corporate-text font-bold">
                             {line.amount.toFixed(2)} {offer.currency}
                           </span>
                         </li>
@@ -141,10 +141,10 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => onChooseOffer(offer)}
-                  className={`inline-flex items-center px-8 py-3 text-[0.6rem] font-technical font-black tracking-monolith uppercase transition-all duration-300
+                  className={`inline-flex items-center px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300
                     ${isBest
                       ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
-                      : 'bg-transparent border border-white/10 text-white hover:bg-white/5'
+                      : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
                     }`}
                 >
                   Choose this node
