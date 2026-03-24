@@ -466,10 +466,10 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               <img src="/logo.png" alt="PrintPrice Pro" className="w-8 h-8 object-contain" />
             </div>
             <div>
-              <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-white uppercase">
+              <h2 className="text-xs font-technical font-black tracking-monolith text-corporate-text uppercase">
                 PrintPrice Pro – AI Assistant
               </h2>
-              <p className="text-[9px] text-corporate-muted font-technical uppercase tracking-widest mt-1">
+              <p className="text-[10px] text-corporate-muted font-technical uppercase tracking-widest mt-2">
                 status: optimal_routing / nodes: active
               </p>
             </div>
@@ -508,21 +508,21 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               <div
                 className={`max-w-[75%] p-6 transition-all duration-300 ${m.role === 'user'
                   ? 'bg-corporate-accent text-white border-l-4 border-white/20'
-                  : 'bg-corporate-elevated/20 text-corporate-text border border-white/5'
+                  : 'bg-corporate-elevated/20 text-corporate-text border border-corporate-text/10'
                   }`}
               >
                 {m.content.includes('Project Summary') ? (
                   <div className="space-y-6">
-                    <p className="text-[0.6rem] font-technical font-black text-white uppercase tracking-monolith border-b border-white/10 pb-4 mb-4">
+                    <p className="text-xs font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4 mb-4">
                       {t('project_summary_title') || 'Project Summary'}
                     </p>
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-[11px]">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
                       {m.content.split('\n').filter(line => line.includes(':')).map((line, idx) => {
                         const [label, value] = line.replace(/^[•\-\*]\s*/, '').split(':');
                         return (
                           <div key={idx} className="flex flex-col gap-1">
-                            <span className="text-corporate-muted uppercase text-[8px] font-technical font-black tracking-technical">{label.trim()}</span>
-                            <span className="font-technical text-corporate-text-secondary uppercase text-[10px] tracking-wider">{value?.trim()}</span>
+                            <span className="text-corporate-muted uppercase text-[9px] font-technical font-black tracking-technical">{label.trim()}</span>
+                            <span className="font-technical text-corporate-text uppercase text-[11px] tracking-wider">{value?.trim()}</span>
                           </div>
                         );
                       })}
@@ -542,16 +542,16 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                               key={offer.id}
                               onClick={() => onChooseOffer(offer)}
                               className={`w-full text-left p-4 transition-all duration-300 group relative overflow-hidden border ${
-                                isBest ? 'bg-corporate-accent/5 border-corporate-accent/40' : 'bg-corporate-primary border-white/5'
+                                isBest ? 'bg-corporate-accent/5 border-corporate-accent/40' : 'bg-corporate-primary border-corporate-text/10'
                               } hover:bg-corporate-accent/10 hover:border-corporate-accent/20`}
                             >
                               <div className="flex justify-between items-start mb-3">
-                                <span className="text-[10px] font-technical font-black text-white uppercase tracking-monolith group-hover:text-corporate-accent transition-colors">{offer.print_house}</span>
-                                <span className="text-base font-display font-black text-white">{offer.total_cost.toLocaleString()} <span className="text-corporate-accent text-xs">{offer.currency}</span></span>
+                                <span className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith group-hover:text-corporate-accent transition-colors">{offer.print_house}</span>
+                                <span className="text-base font-display font-black text-corporate-text">{offer.total_cost.toLocaleString()} <span className="text-corporate-accent text-xs">{offer.currency}</span></span>
                               </div>
                               <div className="flex items-center gap-3">
                                 <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
-                                <span className="text-[9px] font-technical text-corporate-muted uppercase tracking-widest">{offer.estimated_delivery_time || 'Check delivery'}</span>
+                                <span className="text-[10px] font-technical text-corporate-muted uppercase tracking-widest">{offer.estimated_delivery_time || 'Check delivery'}</span>
                               </div>
                             </button>
                           );
