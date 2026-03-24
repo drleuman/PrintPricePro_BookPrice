@@ -227,7 +227,8 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
 
     } catch (err) {
         vault.trackEnd();
-        res.status(502).json({ error: 'Bridge Bridge fault.' });
+        console.error(`[BRIDGE_FAULT] Trace: ${err.message}`);
+        res.status(502).json({ error: 'Infrastructure Safeguard: External node timeout or upstream BPE fault. Calculation failed to bridge safely.' });
     }
 });
 

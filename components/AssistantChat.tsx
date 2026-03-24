@@ -359,7 +359,9 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       // If backend returned no offers (likely because of hallucinated 0 pages),
       // but we now have valid pages, fetch offers manually with security handshake.
       let healedOffers = data.offers;
-      if (!healedOffers?.offers?.length && appliedSpecs.interior_pages > 0) {
+      const validPages = Number(appliedSpecs.interior_pages) > 0;
+      
+      if (!healedOffers?.offers?.length && validPages) {
         console.log('Backend failed to provide offers. Performing auto-healing handshake...');
         try {
           // 1. Obtain Bound Server Challenge
