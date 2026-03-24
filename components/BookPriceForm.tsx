@@ -1,0 +1,821 @@
+import React, { useState, useEffect } from 'react';
+import {
+  BOOK_SIZES_PORTRAIT,
+  BOOK_SIZES_LANDSCAPE,
+  ORIENTATIONS,
+  INTERIOR_PRINT_OPTIONS,
+  COVER_PRINT_OPTIONS,
+  PAPER_TYPE_INTERIOR,
+  PAPER_TYPE_COVER,
+  PAPER_TYPE_ENDPAPER,
+  BINDING_METHODS,
+  FINISHING_OPTIONS,
+  ENDPAPERS_OPTIONS,
+  ENDPAPERS_PRINT_OPTIONS,
+  INTERIOR_GSM_OPTIONS,
+  COVER_GSM_OPTIONS,
+  ENDPAPERS_GSM_OPTIONS,
+  DELIVERY_COUNTRIES,
+  COVER_PAGES_OPTIONS,
+  PMS_OPTIONS,
+  DIMENSION_RANGES,
+  DIMENSION_HINTS,
+} from '../constants';
+import {
+  UserGroupIcon,
+  GlobeEuropeAfricaIcon,
+  Square3Stack3DIcon,
+  DocumentTextIcon,
+  BookOpenIcon,
+  ArrowsPointingOutIcon,
+  PaintBrushIcon,
+  ScaleIcon,
+  SwatchIcon,
+  TrophyIcon,
+  SparklesIcon,
+  SunIcon,
+  CogIcon,
+  BeakerIcon,
+  CurrencyDollarIcon,
+  TagIcon,
+  WrenchIcon,
+  AdjustmentsHorizontalIcon,
+} from '@heroicons/react/24/outline';
+import { InitialBookPricePayload } from '../types';
+import { t } from '../i18n/en';
+
+interface BookPriceFormProps {
+  initialPayload: InitialBookPricePayload;
+  onPayloadChange: (payload: InitialBookPricePayload) => void;
+  onCalculatePrice: () => void;
+  loading: boolean;
+  hasPdf: boolean;
+  isAdmin?: boolean;
+  payloadVersion?: number;
+}
+
+const BookPriceForm: React.FC<BookPriceFormProps> = ({
+  initialPayload,
+  onPayloadChange,
+  onCalculatePrice,
+  loading,
+  hasPdf,
+  isAdmin = false,
+  payloadVersion = 0,
+}) => {
+  const [payload, setPayload] = useState<InitialBookPricePayload>(initialPayload);
+  const [customDimensionError, setCustomDimensionError] = useState<string>('');
+
+  useEffect(() => {
+    setPayload(initialPayload);
+  }, [payloadVersion]);
+
+  // Check if hardcover is selected
+  const isHardcover = payload.binding_method === 'thread_sewn_hc';
+
+  const currentBookSizes = payload.orientation === 'landscape' ? BOOK_SIZES_LANDSCAPE : BOOK_SIZES_PORTRAIT;
+
+  useEffect(() => {
+    const validSizes = payload.orientation === 'landscape' ? BOOK_SIZES_LANDSCAPE : BOOK_SIZES_PORTRAIT;
+    if (!validSizes.includes(payload.book_size)) {
+      const nextPayload = { ...payload, book_size: validSizes[0] };
+      setPayload(nextPayload);
+      onPayloadChange(nextPayload);
+    }
+  }, [payload.orientation]);
+
+  // Validate custom dimensions
+  const isCustomSizeValid = (width: number, height: number, orientation: string): boolean => {
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+    const ranges = DIMENSION_RANGES[orientation as 'portrait' | 'landscape'] || [];
+    return ranges.some((r) => width >= r.wMin && width <= r.wMax && height >= r.hMin && height <= r.hMax);
+  };
+
+  const validateCustomDimensions = (): boolean => {
+    if (payload.book_size !== 'Custom') {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const w = payload.custom_width || 0;
+    const h = payload.custom_height || 0;
+
+    if (!w || !h) {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const valid = isCustomSizeValid(w, h, payload.orientation);
+    if (valid) {
+      setCustomDimensionError('');
+      return true;
+    }
+
+    const orientationName = payload.orientation === 'portrait' ? 'Portrait' : 'Landscape';
+    setCustomDimensionError(
+      `These dimensions are not available for ${orientationName} orientation. Please use one of the ranges listed above.`
+    );
+    return false;
+  };
+
+  // Validate on dimension or orientation change
+  useEffect(() => {
+    validateCustomDimensions();
+  }, [payload.custom_width, payload.custom_height, payload.orientation, payload.book_size]);
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = e.target;
+
+    let newValue: any = value;
+
+    // Handle number inputs
+    if (type === 'number') {
+      newValue = value === '' ? 0 : Number(value);
+    }
+
+    // Handle checkbox
+    if (type === 'checkbox') {
+      newValue = (e.target as HTMLInputElement).checked;
+    }
+
+    const nextPayload = {
+      ...payload,
+      [name]: newValue,
+    } as InitialBookPricePayload;
+
+    // Clear custom dimensions when switching away from Custom
+    if (name === 'book_size' && newValue !== 'Custom') {
+      nextPayload.custom_width = undefined;
+      nextPayload.custom_height = undefined;
+    }
+
+    setPayload(nextPayload);
+    onPayloadChange(nextPayload);
+  };
+
+  const handleCalculatePrice = () => {
+    if (payload.book_size === 'Custom' && !validateCustomDimensions()) {
+      return;
+    }
+    onCalculatePrice();
+  };
+
+  return (
+    <div className="bg-corporate-secondary p-8 md:p-12 border border-white/5 relative overflow-hidden">
+      <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[8rem] font-black pointer-events-none uppercase">
+        SPEC
+      </div>
+      <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
+        <WrenchIcon className="w-5 h-5" />
+        {t('book_specifications_label') || 'Book specifications'}
+      </h2>
+
+      <div className="flex flex-col gap-16 text-xs sm:text-sm">
+        {/* Section: General */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-6">
+            <h3 className="text-[10px] font-technical font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
+              {t('section_general')}
+            </h3>
+            <div className="h-[1px] w-full bg-white/5" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <UserGroupIcon className="w-4 h-4 text-corporate-accent" />
+                {t('copies_label')}
+              </label>
+              <input
+                type="number"
+                name="copies"
+                min={1}
+                value={payload.copies}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted"
+              />
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('copies_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <GlobeEuropeAfricaIcon className="w-4 h-4 text-corporate-accent" />
+                {t('delivery_country_label')}
+              </label>
+              <select
+                name="delivery_country"
+                value={payload.delivery_country}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {DELIVERY_COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('delivery_country_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <Square3Stack3DIcon className="w-4 h-4 text-corporate-accent" />
+                {t('book_size_label')}
+              </label>
+              <select
+                name="book_size"
+                value={payload.book_size}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {currentBookSizes.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('book_size_help')}
+              </p>
+            </div>
+          </div>
+
+          {/* Custom Dimensions Section */}
+          {payload.book_size === 'Custom' && (
+            <div className="bg-corporate-primary/30 border border-corporate-accent/20 p-10 mt-10 animate-slideDown">
+              <span className="text-[10px] font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-3 mb-6">
+                <ArrowsPointingOutIcon className="w-4 h-4" />
+                Custom Dimensions
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex flex-col">
+                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
+                    Width
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="custom_width"
+                      min={payload.orientation === 'portrait' ? 100 : 120}
+                      max={297}
+                      step={1}
+                      placeholder="210"
+                      value={payload.custom_width || ''}
+                      onChange={handleChange}
+                      className={`block w-full py-3 px-5 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted/40 ${customDimensionError ? 'border-corporate-accent' : 'border-white/10'}`}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-technical font-black text-corporate-muted uppercase pointer-events-none">
+                      MM
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
+                    Height
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="custom_height"
+                      min={120}
+                      max={340}
+                      step={1}
+                      placeholder="297"
+                      value={payload.custom_height || ''}
+                      onChange={handleChange}
+                      className={`block w-full py-3 px-5 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted/40 ${customDimensionError ? 'border-corporate-accent' : 'border-white/10'}`}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-technical font-black text-corporate-muted uppercase pointer-events-none">
+                      MM
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 bg-corporate-accent/5 p-4 border border-corporate-accent/10">
+                <p className="text-[9px] font-technical font-bold text-corporate-accent uppercase tracking-monolith mb-2 flex items-center gap-2">
+                  <SparklesIcon className="w-3 h-3" />
+                  <span>{payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Print Authority</span>
+                </p>
+                <p className="text-[10px] text-corporate-text-secondary leading-relaxed font-technical uppercase tracking-wider opacity-70">
+                  {DIMENSION_HINTS[payload.orientation]}
+                </p>
+              </div>
+
+              {customDimensionError && (
+                <p className="mt-3 text-xs text-red-600 font-semibold" role="alert">
+                  {customDimensionError}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
+                {t('interior_pages_label')}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  name="interior_pages"
+                  min={0}
+                  value={payload.interior_pages}
+                  onChange={handleChange}
+                  className={`block w-full py-4 px-6 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 ${hasPdf ? 'border-corporate-accent/50' : 'border-white/10'}`}
+                />
+                {hasPdf && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="text-[9px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-bold shadow-sm">PDF OK</span>
+                  </div>
+                )}
+              </div>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('interior_pages_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <BookOpenIcon className="w-4 h-4 text-corporate-accent" />
+                {t('cover_pages_label')}
+              </label>
+              <select
+                name="cover_pages"
+                value={payload.cover_pages}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {COVER_PAGES_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v} pages
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_pages_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ArrowsPointingOutIcon className="w-4 h-4 text-corporate-accent" />
+                {t('orientation_label')}
+              </label>
+              <select
+                name="orientation"
+                value={payload.orientation}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {ORIENTATIONS.map((o) => (
+                  <option key={o} value={o}>
+                    {o.charAt(0).toUpperCase() + o.slice(1)}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('orientation_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Interior */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_interior')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
+                {t('interior_print_label')}
+              </label>
+              <select
+                name="interior_print"
+                value={payload.interior_print}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {INTERIOR_PRINT_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === '4/4' ? '4/4 Full Color' : m === '2/2' ? '2/2 Colors' : '1/1 B/W'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('interior_print_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <CogIcon className="w-4 h-4 text-corporate-accent" />
+                {t('paper_type_interior_label')}
+              </label>
+              <select
+                name="paper_type_interior"
+                value={payload.paper_type_interior}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {PAPER_TYPE_INTERIOR.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_type_interior_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ScaleIcon className="w-4 h-4 text-corporate-accent" />
+                {t('paper_weight_interior_label')}
+              </label>
+              <select
+                name="paper_weight_interior"
+                value={payload.paper_weight_interior}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {INTERIOR_GSM_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} gsm
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_weight_interior_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SwatchIcon className="w-4 h-4 text-corporate-accent" />
+                {t('pms_interior_label')}
+              </label>
+              <select
+                name="pms_interior"
+                value={payload.pms_interior}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {PMS_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 0 ? 'None' : `${v} color`}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('pms_interior_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Cover */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_cover')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
+                {t('cover_print_label')}
+              </label>
+              <select
+                name="cover_print"
+                value={payload.cover_print}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {COVER_PRINT_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === '4/0' ? '4/0 Single-sided' : m === '4/4' ? '4/4 Both sides' : '1/0 B/W'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_print_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <BeakerIcon className="w-4 h-4 text-corporate-accent" />
+                {t('paper_type_cover_label')}
+              </label>
+              <select
+                name="paper_type_cover"
+                value={payload.paper_type_cover}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {PAPER_TYPE_COVER.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_type_cover_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ScaleIcon className="w-4 h-4 text-corporate-accent" />
+                {t('paper_weight_cover_label')}
+              </label>
+              <select
+                name="paper_weight_cover"
+                value={payload.paper_weight_cover}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {COVER_GSM_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} gsm
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('paper_weight_cover_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SwatchIcon className="w-4 h-4 text-corporate-accent" />
+                {t('pms_cover_label')}
+              </label>
+              <select
+                name="pms_cover"
+                value={payload.pms_cover}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {PMS_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v === 0 ? 'None' : `${v} color`}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('pms_cover_help')}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <AdjustmentsHorizontalIcon className="w-4 h-4 text-corporate-accent" />
+                {t('cover_print_rev_label')}
+              </label>
+              <select
+                name="cover_print_rev"
+                value={payload.cover_print_rev}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {[0, 1, 2, 3, 4, 5, 6].map((v) => (
+                  <option key={v} value={v}>
+                    {v === 0 ? 'None' : `${v} color${v > 1 ? 's' : ''}`}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('cover_print_rev_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Binding & Finishing */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+              {t('section_binding')}
+            </h3>
+            <div className="h-px w-full bg-gray-100" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <TrophyIcon className="w-4 h-4 text-corporate-accent" />
+                {t('binding_method_label')}
+              </label>
+              <select
+                name="binding_method"
+                value={payload.binding_method}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {BINDING_METHODS.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('binding_method_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SparklesIcon className="w-4 h-4 text-corporate-accent" />
+                {t('finishing_options_label')}
+              </label>
+              <select
+                name="finishing_options"
+                value={payload.finishing_options}
+                onChange={handleChange}
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+              >
+                {FINISHING_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('finishing_options_help')}
+              </p>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SunIcon className="w-4 h-4 text-corporate-accent" />
+                {t('uv_varnish_label')}
+              </label>
+              <div className="flex items-center gap-4 py-4 px-6 bg-corporate-primary border border-white/10 h-[58px]">
+                <input
+                  id="uv_varnish"
+                  type="checkbox"
+                  name="uv_varnish"
+                  checked={payload.uv_varnish}
+                  onChange={handleChange}
+                  className="h-5 w-5 bg-corporate-primary border border-white/20 text-corporate-accent focus:ring-0 rounded-none cursor-pointer"
+                />
+                <label htmlFor="uv_varnish" className="text-[10px] font-technical font-black text-white uppercase tracking-monolith cursor-pointer">
+                  {payload.uv_varnish ? 'SYSTEM_ACTIVE' : 'SYSTEM_INACTIVE'}
+                </label>
+              </div>
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                {t('uv_varnish_help')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Hardcover options (conditional) */}
+        {isHardcover && (
+          <div className="bg-corporate-primary/30 border border-white/5 p-8 mt-10 relative overflow-hidden">
+            <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[4rem] font-black pointer-events-none uppercase">
+              PREM
+            </div>
+            <h3 className="text-[10px] font-technical font-black text-corporate-accent mb-8 uppercase tracking-monolith flex items-center gap-4 relative z-10">
+              <WrenchIcon className="w-4 h-4" />
+              Hardcover Premium Options
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10 relative z-10">
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
+                  {t('endpapers_label')}
+                </label>
+                <select
+                  name="endpapers"
+                  value={payload.endpapers}
+                  onChange={handleChange}
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+                >
+                  {ENDPAPERS_OPTIONS.map((e) => (
+                    <option key={e.value} value={e.value}>
+                      {e.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                  {t('endpapers_help')}
+                </p>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
+                  {t('endpapers_print_label')}
+                </label>
+                <select
+                  name="endpapers_print"
+                  value={payload.endpapers_print}
+                  onChange={handleChange}
+                  disabled={payload.endpapers === 'none'}
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 disabled:opacity-30"
+                >
+                  {ENDPAPERS_PRINT_OPTIONS.map((e) => (
+                    <option key={e.value} value={e.value}>
+                      {e.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                  {t('endpapers_print_help')}
+                </p>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <CogIcon className="w-4 h-4 text-corporate-accent" />
+                  {t('paper_type_endpaper_label')}
+                </label>
+                <select
+                  name="paper_type_endpaper"
+                  value={payload.paper_type_endpaper}
+                  onChange={handleChange}
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+                >
+                  {PAPER_TYPE_ENDPAPER.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                  {t('paper_type_endpaper_help')}
+                </p>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <ScaleIcon className="w-4 h-4 text-corporate-accent" />
+                  {t('paper_weight_endpapers_label')}
+                </label>
+                <select
+                  name="paper_weight_endpapers"
+                  value={payload.paper_weight_endpapers}
+                  onChange={handleChange}
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
+                >
+                  {ENDPAPERS_GSM_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} gsm
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
+                  {t('paper_weight_endpapers_help')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+
+      </div>
+
+      <div className="mt-12 flex justify-end">
+        <button
+          type="button"
+          onClick={handleCalculatePrice}
+          disabled={loading}
+          className="inline-flex items-center bg-corporate-accent px-12 py-5 text-[0.7rem] font-technical font-black text-white uppercase tracking-monolith transition-all duration-300 hover:bg-corporate-hover hover:shadow-[0_10px_30px_rgba(220,0,0,0.3)] disabled:opacity-50 relative group overflow-hidden"
+        >
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+          {loading ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Calculating...
+            </>
+          ) : (
+            'Calculate price'
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default BookPriceForm;

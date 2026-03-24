@@ -1,0 +1,587 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT, BOOK_PRICE_API_ENDPOINT } from '../constants';
+import { InitialBookPricePayload, BookPriceResponse } from '../types';
+import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
+import { SunIcon, MoonIcon } from '@heroicons/react/24/outline';
+import { t } from '../i18n/en';
+
+type ChatRole = 'user' | 'assistant';
+
+interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  kind?: 'text' | 'offers';
+  ui?: {
+    show_offers?: boolean;
+    recommended_offer_ids?: string[];
+  };
+}
+
+interface AssistantChatProps {
+  specs: InitialBookPricePayload;
+  offers: BookPriceResponse | null;
+  onSpecsPatch: (patch: Partial<InitialBookPricePayload>) => void;
+  onOffersUpdate: (offers: BookPriceResponse) => void;
+  onChooseOffer: (offer: any) => Promise<void>;
+  isDark?: boolean;
+  onToggleTheme?: () => void;
+}
+
+/**
+ * Expected from the assistant backend:
+ *
+ * {
+ *   "reply": "text to show the user",
+ *   "specs_patch": { ...patched fields for the form... },
+ *   "offers": { success, message?, offers: [...] },
+ *   "order_url": "https://printprice.pro/print_order/123"
+ * }
+ */
+interface AssistantResponse {
+  reply: string;
+  specs_patch?: Partial<InitialBookPricePayload> | null;
+  offers?: BookPriceResponse;
+  order_url?: string;
+  ui?: {
+    show_offers?: boolean;
+    recommended_offer_ids?: string[];
+  };
+}
+
+const AssistantChat: React.FC<AssistantChatProps> = ({
+  specs,
+  offers,
+  onSpecsPatch,
+  onOffersUpdate,
+  onChooseOffer,
+  isDark,
+  onToggleTheme,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content:
+        "Hello, I'm PrintPrice Pro AI Assistant. I can help you describe your book printing project and get real quotes.",
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll dentro del área de chat cada vez que cambian los mensajes
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, loading]);
+
+  const sendMessage = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || loading) return;
+
+    const userMessage: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: trimmed,
+    };
+
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
+    setInput('');
+    setError(null);
+    setLoading(true);
+
+    try {
+      const payload = {
+        system_prompt: PRINTPRICE_ASSISTANT_PROMPT,
+        messages: nextMessages.map((m) => ({ role: m.role, content: m.content })),
+        ui_state: {
+          ORIGINAL_SPECS_BEFORE_THIS_MESSAGE: specs,
+          offers,
+        },
+      };
+
+      console.log("ASSISTANT PAYLOAD messages:", payload.messages.slice(-2));
+      console.log("ASSISTANT PAYLOAD specs:", payload.ui_state.ORIGINAL_SPECS_BEFORE_THIS_MESSAGE);
+
+      const res = await fetch(AI_ASSISTANT_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: "I'm sorry, but the AI Assistant service is currently unavailable. Please use the form below to manually enter your book specifications and calculate prices. The AI Assistant will be available soon!",
+            },
+          ]);
+          setLoading(false);
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data: AssistantResponse = await res.json();
+      console.log('AI Assistant Raw Response:', data);
+
+      let finalReply = data.reply || '';
+      let patch = data.specs_patch;
+
+      if (!finalReply && typeof data === 'string') {
+        finalReply = data;
+      }
+
+      // 1) Normalize the patch coming from the backend
+      if (patch) {
+        if (typeof patch.book_size === 'string') {
+          const bs = patch.book_size;
+          if (bs.includes('A5')) patch.book_size = 'A5' as any;
+          else if (bs.includes('A4')) patch.book_size = 'A4' as any;
+          else if (bs.includes('A6')) patch.book_size = 'A6' as any;
+          else if (bs.includes('170') && bs.includes('240')) patch.book_size = '170 x 240 mm' as any;
+          else if (bs.includes('210') && bs.includes('210')) patch.book_size = '210 x 210 mm' as any;
+        }
+        if (typeof patch.delivery_country === 'string') {
+          patch.delivery_country = patch.delivery_country.toUpperCase().substring(0, 2);
+        }
+      }
+
+      // 2) HEURISTIC EXTRACTION: Parse the USER'S message (trimmed)
+      const heuristicPatch: Partial<InitialBookPricePayload> = {};
+      const userLower = trimmed.toLowerCase();
+
+      // Copies: handle English and Spanish variants
+      const copiesMatch = userLower.match(/(\d+)\s*(copies|copys|copie|copias|cop)\b/);
+      if (copiesMatch) heuristicPatch.copies = Number(copiesMatch[1]);
+
+      // Interior Pages: handle English and Spanish variants
+      const pagesMatch = userLower.match(/(\d+)\s*(interior\s*)?(pages?|pp|paginas?|páginas?|pag)\b/);
+      if (pagesMatch) heuristicPatch.interior_pages = Number(pagesMatch[1]);
+
+      // Interior Print: B&W interior
+      if (/\b(b&w|bw|black\s*&\s*white|black\s*(and|y)\s*white|monochrome|grayscale|bn|b\/n)\b/.test(userLower)) {
+        heuristicPatch.interior_print = '1/1';
+      }
+      // Interior Print: Full color
+      if (/\b(interior\s*(in\s*)?color|interior\s*full\s*color|4\/4\s*interior)\b/.test(userLower)) {
+        heuristicPatch.interior_print = '4/4';
+      }
+
+      // Cover Print: Color cover
+      const colorCoverMatch = /\b(cover\s*(in\s*)?color|colour\s*cover|color\s*cover|cubierta\s*(a\s*)?color)\b/.test(userLower);
+      if (colorCoverMatch) {
+        // Detect if they want both sides
+        const bothSides = /\b(both\s*sides|2\s*caras|dos\s*caras|4\/4)\b/.test(userLower);
+        heuristicPatch.cover_print = bothSides ? '4/4' : '4/0';
+      }
+
+      // Binding
+      if (userLower.includes('hardcover') || userLower.includes('hard cover') || userLower.includes('dura')) {
+        heuristicPatch.binding_method = 'thread_sewn_hc';
+      }
+      if (userLower.includes('softcover') || userLower.includes('soft cover') || userLower.includes('blanda') || userLower.includes('perfect')) {
+        heuristicPatch.binding_method = 'perfect_bound';
+      }
+
+      // Size
+      if (userLower.includes('a5')) heuristicPatch.book_size = 'A5' as any;
+      if (userLower.includes('a4')) heuristicPatch.book_size = 'A4' as any;
+      if (userLower.includes('a6')) heuristicPatch.book_size = 'A6' as any;
+      if (userLower.includes('170') && userLower.includes('240')) heuristicPatch.book_size = '170 x 240 mm' as any;
+
+      // Orientation
+      if (userLower.includes('landscape') || userLower.includes('horizontal')) heuristicPatch.orientation = 'landscape';
+      if (userLower.includes('portrait') || userLower.includes('vertical')) heuristicPatch.orientation = 'portrait';
+
+      // Delivery
+      if (userLower.includes('germany') || userLower.includes('alemania')) heuristicPatch.delivery_country = 'DE';
+      if (userLower.includes('spain') || userLower.includes('españa')) heuristicPatch.delivery_country = 'ES';
+      if (userLower.includes('uk') || userLower.includes('united kingdom') || userLower.includes('reino unido') || userLower.includes('england')) heuristicPatch.delivery_country = 'GB';
+
+      // GSM Detection (Interior, Cover, Endpapers)
+      // Interior GSM: "120 gsm interior" or "interior 120gsm"
+      const interiorGsmMatch = userLower.match(/(?:interior|pages?).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:interior|pages?)/);
+      if (interiorGsmMatch) {
+        const gsm = Number(interiorGsmMatch[1] || interiorGsmMatch[2]);
+        heuristicPatch.paper_weight_interior = gsm;
+      }
+
+      // Cover GSM: "250 gsm cover" or "cover 250gsm"
+      const coverGsmMatch = userLower.match(/(?:cover|cubierta).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:cover|cubierta)/);
+      if (coverGsmMatch) {
+        const gsm = Number(coverGsmMatch[1] || coverGsmMatch[2]);
+        heuristicPatch.paper_weight_cover = gsm;
+      }
+
+      // Endpapers GSM: "endpapers 150gsm" or "150 gsm endpapers"
+      const endpapersGsmMatch = userLower.match(/(?:endpapers?|guardas?).*?(\d{2,3})\s*gsm|(\d{2,3})\s*gsm.*?(?:endpapers?|guardas?)/);
+      if (endpapersGsmMatch) {
+        const gsm = Number(endpapersGsmMatch[1] || endpapersGsmMatch[2]);
+        heuristicPatch.paper_weight_endpapers = gsm;
+      }
+
+      // Endpapers presence
+      if (/\b(endpapers?|guardas?)\b/.test(userLower)) {
+        heuristicPatch.endpapers = 'standard';
+
+        // Endpapers print: "endpapers 1/1" or "endpapers b&w"
+        if (/endpapers?.*?(1\/1|b&w|bw|black\s*&\s*white)/i.test(userLower)) {
+          heuristicPatch.endpapers_print = '1/1';
+        } else if (/endpapers?.*?(4\/4|color|colour)/i.test(userLower)) {
+          heuristicPatch.endpapers_print = '4/4';
+        }
+      }
+
+      // Paper Types
+      if (/\b(offset|woodfree|mc)\b/.test(userLower)) {
+        // Check context to determine if it's for interior, cover, or endpapers
+        if (/(?:interior|pages?).*?(?:offset|woodfree|mc)|(?:offset|woodfree|mc).*?(?:interior|pages?)/i.test(userLower)) {
+          heuristicPatch.paper_type_interior = 'offset';
+        }
+        if (/(?:endpapers?|guardas?).*?(?:offset|woodfree|mc)|(?:offset|woodfree|mc).*?(?:endpapers?|guardas?)/i.test(userLower)) {
+          heuristicPatch.paper_type_endpaper = 'offset';
+        }
+      }
+      if (/\b(artboard|estucado)\b/.test(userLower)) {
+        heuristicPatch.paper_type_cover = 'artboard';
+      }
+
+      console.log('Backend Patch:', patch);
+      console.log('Heuristic Patch:', heuristicPatch);
+
+      // 3) MERGE & OVERRIDE: Heuristic overrides patch if conflict detected for critical fields
+      let finalPatch = { ...patch };
+
+      // Conflict guards: if user clearly stated intent, heuristic wins over backend patch
+      if (heuristicPatch.copies !== undefined) finalPatch.copies = heuristicPatch.copies;
+      if (heuristicPatch.interior_pages !== undefined) finalPatch.interior_pages = heuristicPatch.interior_pages;
+      if (heuristicPatch.binding_method !== undefined) finalPatch.binding_method = heuristicPatch.binding_method;
+      if (heuristicPatch.book_size !== undefined) finalPatch.book_size = heuristicPatch.book_size;
+      if (heuristicPatch.orientation !== undefined) finalPatch.orientation = heuristicPatch.orientation;
+      if (heuristicPatch.delivery_country !== undefined) finalPatch.delivery_country = heuristicPatch.delivery_country;
+      if (heuristicPatch.interior_print !== undefined) finalPatch.interior_print = heuristicPatch.interior_print;
+      if (heuristicPatch.cover_print !== undefined) finalPatch.cover_print = heuristicPatch.cover_print;
+
+      // GSM overrides
+      if (heuristicPatch.paper_weight_interior !== undefined) finalPatch.paper_weight_interior = heuristicPatch.paper_weight_interior;
+      if (heuristicPatch.paper_weight_cover !== undefined) finalPatch.paper_weight_cover = heuristicPatch.paper_weight_cover;
+      if (heuristicPatch.paper_weight_endpapers !== undefined) finalPatch.paper_weight_endpapers = heuristicPatch.paper_weight_endpapers;
+
+      // Paper types
+      if (heuristicPatch.paper_type_interior !== undefined) finalPatch.paper_type_interior = heuristicPatch.paper_type_interior;
+      if (heuristicPatch.paper_type_cover !== undefined) finalPatch.paper_type_cover = heuristicPatch.paper_type_cover;
+      if (heuristicPatch.paper_type_endpaper !== undefined) finalPatch.paper_type_endpaper = heuristicPatch.paper_type_endpaper;
+
+      // Endpapers
+      if (heuristicPatch.endpapers !== undefined) finalPatch.endpapers = heuristicPatch.endpapers;
+      if (heuristicPatch.endpapers_print !== undefined) finalPatch.endpapers_print = heuristicPatch.endpapers_print;
+
+      console.log('Final merged patch to apply:', finalPatch);
+      const appliedSpecs = { ...specs, ...finalPatch };
+
+      // 4) REPAIR HALLUCINATIONS in the reply text
+      // If the reply contains a Project Summary, we replace it with the ACTUAL data we are applying.
+      const summaryRegex = /Project Summary:[\s\S]*?(?=\n\n|\n[A-Z]|$)/i;
+
+      if (summaryRegex.test(finalReply)) {
+        const getBindingLabel = (m: string) => {
+          if (m === 'thread_sewn_hc') return 'Hardcover';
+          if (m === 'perfect_bound') return 'Softcover';
+          return m;
+        };
+        const getPrintLabel = (p: string) => {
+          if (p === '4/4') return 'Full Color (2 sides)';
+          if (p === '4/0') return 'Full Color (1 side)';
+          if (p === '1/1') return 'Black & White';
+          if (p === '1/0') return 'B&W (1 side)';
+          return p;
+        };
+
+        const truthSummary = `Project Summary:
+• Copies: ${appliedSpecs.copies}
+• Size: ${appliedSpecs.book_size} (${appliedSpecs.orientation})
+• Interior Pages: ${appliedSpecs.interior_pages}
+• Binding: ${getBindingLabel(appliedSpecs.binding_method)}
+• Interior Print: ${getPrintLabel(appliedSpecs.interior_print)}
+• Cover Print: ${getPrintLabel(appliedSpecs.cover_print)}
+• Delivery: ${appliedSpecs.delivery_country}`;
+
+        // Find and replace the summary block
+        finalReply = finalReply.replace(summaryRegex, truthSummary);
+
+        // Remove the "no offers" message if we are about to heal them
+        if (appliedSpecs.interior_pages > 0) {
+          finalReply = finalReply.replace(/It has not been possible to get offers at this time\./gi, '');
+        }
+      }
+
+      // Add text message
+      if (finalReply) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            content: finalReply.trim(),
+            kind: 'text',
+          },
+        ]);
+      }
+
+      // 5) APPLY PATCH to form
+      if (Object.keys(finalPatch).length > 0) {
+        onSpecsPatch(finalPatch);
+      }
+
+      // 6) OFFERS AUTO-HEALING
+      // If backend returned no offers (likely because of hallucinated 0 pages),
+      // but we now have valid pages, fetch offers manually.
+      let healedOffers = data.offers;
+      if (!healedOffers?.offers?.length && appliedSpecs.interior_pages > 0) {
+        console.log('Backend failed to provide offers. Auto-healing offers using corrected specs...');
+        try {
+          const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(appliedSpecs),
+          });
+          if (bpeRes.ok) {
+            const bpeData = await bpeRes.json();
+            // Normalise manually as we do in App.tsx (simplified for internal use)
+            const rawOffers = bpeData.print_houses || bpeData.offers || [];
+            if (rawOffers.length > 0) {
+              healedOffers = {
+                success: true,
+                offers: rawOffers.map((o: any, idx: number) => ({
+                  id: String(o.house_id || o.id || `healed-${idx}`),
+                  print_house: o.print_house || 'Print house',
+                  total_cost: o.total_cost || o.total_price || 0,
+                  currency: o.currency || 'EUR',
+                  estimated_delivery_time: o.estimated_delivery_time || '',
+                  breakdown: o.lines || o.breakdown || [],
+                })),
+              };
+              onOffersUpdate(healedOffers);
+              console.log('Offers successfully healed:', healedOffers);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to heal offers:', e);
+        }
+      } else if (healedOffers) {
+        onOffersUpdate(healedOffers);
+      }
+
+      // 7) SHOW OFFERS if UI requested or we have them
+      const shouldShowOffers =
+        data.ui?.show_offers === true || !!healedOffers?.offers?.length;
+
+      if (shouldShowOffers) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-offers-${Date.now()}`,
+            role: 'assistant',
+            content: '',
+            kind: 'offers',
+            ui: {
+              show_offers: true,
+              recommended_offer_ids: data.ui?.recommended_offer_ids || [],
+            },
+          },
+        ]);
+      }
+
+      // Order created
+      if (data.order_url) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-order-${Date.now()}`,
+            role: 'assistant',
+            content: `Order created successfully. Link to the order: ${data.order_url}`,
+          },
+        ]);
+      }
+    } catch (err: any) {
+      console.error('Assistant error:', err);
+      // Don't show technical error to user if it's a 404 (already handled above)
+      if (!err.message?.includes('404')) {
+        setError(err?.message || 'Error contacting the assistant.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="mb-12">
+      <div className="bg-corporate-secondary border border-white/5 flex flex-col h-[520px] overflow-hidden transition-all duration-300 relative">
+        <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[6rem] font-black pointer-events-none uppercase">
+          AI_LOG
+        </div>
+        <div className="bg-corporate-primary/50 pl-10 pr-6 py-6 flex items-center justify-between border-b border-white/5 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src="/logo.png" alt="PrintPrice Pro" className="w-8 h-8 object-contain" />
+            </div>
+            <div>
+              <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-white uppercase">
+                PrintPrice Pro – AI Assistant
+              </h2>
+              <p className="text-[9px] text-corporate-muted font-technical uppercase tracking-widest mt-1">
+                status: optimal_routing / nodes: active
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                className="p-2 border border-white/5 bg-corporate-primary/50 text-corporate-muted hover:text-corporate-accent hover:border-corporate-accent/20 transition-all active:scale-95 group"
+                title={isDark ? 'Switch to LIGHT_SYSTEM' : 'Switch to DARK_SYSTEM'}
+              >
+                {isDark ? (
+                  <SunIcon className="w-4 h-4" />
+                ) : (
+                  <MoonIcon className="w-4 h-4" />
+                )}
+              </button>
+            )}
+            <div className="flex items-center gap-3 bg-corporate-accent/5 px-4 py-2 border border-corporate-accent/20">
+              <div className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-corporate-accent opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-corporate-accent"></span>
+              </div>
+              <span className="text-[9px] font-technical font-black uppercase tracking-monolith text-corporate-accent">Online</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto space-y-6 pl-10 pr-6 py-8 scroll-smooth bg-corporate-primary/30">
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[75%] p-6 transition-all duration-300 ${m.role === 'user'
+                  ? 'bg-corporate-accent text-white border-l-4 border-white/20'
+                  : 'bg-corporate-elevated/20 text-corporate-text border border-white/5'
+                  }`}
+              >
+                {m.content.includes('Project Summary') ? (
+                  <div className="space-y-6">
+                    <p className="text-[0.6rem] font-technical font-black text-white uppercase tracking-monolith border-b border-white/10 pb-4 mb-4">
+                      {t('project_summary_title') || 'Project Summary'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-[11px]">
+                      {m.content.split('\n').filter(line => line.includes(':')).map((line, idx) => {
+                        const [label, value] = line.replace(/^[•\-\*]\s*/, '').split(':');
+                        return (
+                          <div key={idx} className="flex flex-col gap-1">
+                            <span className="text-corporate-muted uppercase text-[8px] font-technical font-black tracking-technical">{label.trim()}</span>
+                            <span className="font-technical text-corporate-text-secondary uppercase text-[10px] tracking-wider">{value?.trim()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : m.kind === 'offers' ? (
+                  <div className="space-y-6 min-w-[300px]">
+                    <p className="text-[0.6rem] font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4">
+                      {t('recommended_offers') || 'Recommended Offers'}
+                    </p>
+                    <div className="space-y-3">
+                      {offers?.offers?.length ? (
+                        [...offers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
+                          const isBest = index === 0;
+                          return (
+                            <button
+                              key={offer.id}
+                              onClick={() => onChooseOffer(offer)}
+                              className={`w-full text-left p-4 transition-all duration-300 group relative overflow-hidden border ${
+                                isBest ? 'bg-corporate-accent/5 border-corporate-accent/40' : 'bg-corporate-primary border-white/5'
+                              } hover:bg-corporate-accent/10 hover:border-corporate-accent/20`}
+                            >
+                              <div className="flex justify-between items-start mb-3">
+                                <span className="text-[10px] font-technical font-black text-white uppercase tracking-monolith group-hover:text-corporate-accent transition-colors">{offer.print_house}</span>
+                                <span className="text-base font-display font-black text-white">{offer.total_cost.toLocaleString()} <span className="text-corporate-accent text-xs">{offer.currency}</span></span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
+                                <span className="text-[9px] font-technical text-corporate-muted uppercase tracking-widest">{offer.estimated_delivery_time || 'Check delivery'}</span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="text-[10px] font-technical text-corporate-muted uppercase tracking-widest italic py-4">
+                          node_calculation in progress...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="font-technical text-[13px] leading-relaxed tracking-wide whitespace-pre-line">{m.content}</div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {error && (
+            <div className="bg-corporate-accent/10 border border-corporate-accent/20 p-4">
+              <p className="text-[10px] font-technical font-black text-corporate-accent uppercase tracking-monolith">System Exception</p>
+              <p className="text-xs text-corporate-text-secondary mt-1">{error}</p>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="pl-10 pr-6 py-6 bg-corporate-secondary border-t border-white/5 flex items-center gap-6 relative z-10">
+          <textarea
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+            placeholder="Describe system_project requirements..."
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-white placeholder-corporate-muted font-technical tracking-wide"
+          />
+          <button
+            type="button"
+            onClick={sendMessage}
+            disabled={loading || !input.trim()}
+            className="w-12 h-12 flex items-center justify-center bg-corporate-accent text-white hover:bg-corporate-hover transition-all duration-300 disabled:opacity-30 group"
+          >
+            {loading ? (
+              <span className="w-4 h-4 border-2 border-white border-b-transparent animate-spin" />
+            ) : (
+              <PaperAirplaneIcon className="h-5 w-5 transform -rotate-45 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+            )}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+export default AssistantChat;
