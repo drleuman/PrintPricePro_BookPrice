@@ -28,6 +28,16 @@ interface AssistantChatProps {
   onToggleTheme?: () => void;
 }
 
+// Security Layer 2: Challenge Context Helper (v5.2)
+async function getPayloadContext(data: any) {
+  // Use core fields that define the pricing model to bind the token
+  const coreFields = [data.copies, data.interior_pages || 0, data.book_size];
+  const msgUint8 = new TextEncoder().encode(JSON.stringify(coreFields));
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Expected from the assistant backend:
  *
@@ -345,17 +355,33 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         onSpecsPatch(finalPatch);
       }
 
-      // 6) OFFERS AUTO-HEALING
+      // 6) OFFERS AUTO-HEALING (Hardened v5.2)
       // If backend returned no offers (likely because of hallucinated 0 pages),
-      // but we now have valid pages, fetch offers manually.
+      // but we now have valid pages, fetch offers manually with security handshake.
       let healedOffers = data.offers;
       if (!healedOffers?.offers?.length && appliedSpecs.interior_pages > 0) {
-        console.log('Backend failed to provide offers. Auto-healing offers using corrected specs...');
+        console.log('Backend failed to provide offers. Performing auto-healing handshake...');
         try {
+          // 1. Obtain Bound Server Challenge
+          const payloadCtx = await getPayloadContext(appliedSpecs);
+          const challengeRes = await fetch('/api/security/challenge', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload_context: payloadCtx })
+          });
+          if (!challengeRes.ok) throw new Error('Infrastructure safeguard triggered.');
+          const { token, nonce, timestamp } = await challengeRes.json();
+
+          // 2. Request Final Calculation with token
           const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(appliedSpecs),
+            body: JSON.stringify({
+              ...appliedSpecs,
+              security_token: token,
+              nonce,
+              timestamp
+            }),
           });
           if (bpeRes.ok) {
             const bpeData = await bpeRes.json();
@@ -378,7 +404,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
             }
           }
         } catch (e) {
-          console.error('Failed to heal offers:', e);
+          console.error('Failed to heal offers safely:', e);
         }
       } else if (healedOffers) {
         onOffersUpdate(healedOffers);
