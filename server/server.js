@@ -33,6 +33,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
+const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
 const signingSecret = process.env.SIGNING_SECRET;
@@ -133,26 +134,26 @@ const hardenResponse = (offers, score) => {
     return offers.map(offer => {
         let cost = parseFloat(offer.total_cost || offer.total_price || 0);
         const pid = crypto.createHash('sha256').update(String(offer.id || 'p')).digest('hex').substring(0, 10);
-        
+
         // Tier 0: Normal (Rounded)
         if (score <= 15) {
             cost = Math.round(cost);
             return { id: pid, print_house: "Standard Partner", total_cost: cost, currency: offer.currency || 'EUR', estimated_delivery_time: offer.estimated_delivery_time };
         }
-        
+
         // Tier 1: Degraded (Nearest 5)
         if (score <= 25) {
             cost = Math.round(cost / 5) * 5;
             return { id: pid, print_house: "Partner (Adaptive Mode)", total_cost: cost, currency: offer.currency || 'EUR', status: "Estimated" };
         }
-        
+
         // Tier 2: Range Mode (Min-Max) - Deterministic
         if (score <= 40) {
             const min = Math.round(cost * 0.95);
             const max = Math.round(cost * 1.05);
             return { id: pid, print_house: "Public Estimate Range", range: `${min} - ${max} ${offer.currency || 'EUR'}`, status: "Range" };
         }
-        
+
         // Tier 3: Redacted / Fallback
         return { id: pid, print_house: "Specialized Quote Required", message: "Pattern-based restriction active. Contact support for high-precision pricing." };
     });
@@ -172,7 +173,7 @@ app.post('/api/security/challenge', bootLimiter, (req, res) => {
     const nonce = crypto.randomBytes(16).toString('hex');
     const timestamp = Date.now();
     const token = mintToken(sessionId, nonce, timestamp, payload_context);
-    
+
     if (!req.signedCookies['pp_session_id']) {
         res.cookie('pp_session_id', sessionId, { httpOnly: true, signed: true, secure: true, sameSite: 'Lax' });
     }
@@ -214,14 +215,14 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
 
     try {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
-        
+
         vault.trackStart();
-        const response = await axios.post('https://printprice.pro/wp-json/bpe/v1/estimates', cleanPayload, { timeout: 15000 });
+        const response = await axios.post(bpeEstimatesUrl, cleanPayload, { timeout: 15000 });
         vault.trackEnd();
 
         // 3. ADAPTIVE RESPONSE DEGRADATION (Layer 5)
         const hardened = hardenResponse(response.data, session.abuseScore);
-        
+
         console.log(`[AUDIT] ADAPTIVE_NODE Calc session=${sessionId} AAS=${session.abuseScore} Latency=${delay} IP=${ipChain}`);
         res.json({ success: true, offers: hardened, mode: session.abuseScore > 10 ? "Degraded" : "Precise" });
 
