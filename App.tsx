@@ -205,6 +205,7 @@ const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const cartRef = useRef<HTMLDivElement>(null);
+  const offersRef = useRef<HTMLDivElement>(null);
 
   // Warmup Security Bridge (v5.2)
   useEffect(() => {
@@ -519,6 +520,7 @@ const App: React.FC = () => {
       }
 
       setOffers(normalised);
+      setTimeout(() => offersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     } catch (err: any) {
       console.error('Error calculating price:', err);
       setError(err?.message || t('api_error_message'));
@@ -642,6 +644,7 @@ const App: React.FC = () => {
 
           {/* Right: Offers + Cart */}
           <div className="flex flex-col gap-6">
+            <div ref={offersRef}>
             <PrintOffersPanel
               offers={offers}
               loading={loadingOffers}
@@ -649,6 +652,7 @@ const App: React.FC = () => {
               onChooseOffer={handleChooseOffer}
               addedIds={new Set(cart.map(i => i.offer.id))}
             />
+            </div>
 
             {!orderSuccess && (
               <div ref={cartRef}>

@@ -9,8 +9,6 @@ const express = require('express');
 const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
-const WebSocket = require('ws');
-const { URLSearchParams, URL } = require('url');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -32,7 +30,6 @@ verifyEnvironment();
 const app = express();
 const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
-const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
 const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
@@ -77,7 +74,6 @@ class AdaptiveVault {
 const vault = new AdaptiveVault();
 setInterval(() => vault.cleanup(), 300000);
 
-const staticPath = path.join(__dirname, '..', 'dist');
 
 app.use(cookieParser(sessionSecret));
 app.use(helmet({
@@ -273,16 +269,8 @@ app.post('/api/cart/checkout', (req, res) => {
     res.json({ success: true, order_id: orderId });
 });
 
-// 🔴 REPO BRIDGE (Restricted Allowlists)
-const bridgeAuth = (req, res, next) => {
-    if (req.signedCookies['pp_session_id']) return next();
-    return res.status(401).json({ error: 'Unauthorized Bridge Path.' });
-};
-
-app.use('/api-bridge', bridgeAuth);
-
-// 🤖 PPP-AI CHAT: Native Gemini handler (replaces missing WP plugin endpoint)
-app.post('/api-bridge/wp-json/ppp-ai/v1/chat', async (req, res) => {
+// 🤖 AI CHAT
+app.post('/api/ai/chat', async (req, res) => {
     const { system_prompt, messages, ui_state } = req.body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -319,22 +307,6 @@ app.post('/api-bridge/wp-json/ppp-ai/v1/chat', async (req, res) => {
     }
 });
 
-app.all('/api-bridge/*', async (req, res) => {
-    const target = req.params[0] || req.url.substring(12);
-    let url;
-    if (target.startsWith('v1/models/gemini')) url = `${externalApiBaseUrl}/${target}`;
-    else if (target.includes('wp-json/ppp-ai') || target.includes('wp-json/custom-print')) url = `https://printprice.pro/${target}`;
-    else return res.status(403).json({ error: 'Target Restricted.' });
-
-    const headers = { 'Content-Type': 'application/json' };
-    if (url.includes('googleapis.com')) headers['X-Goog-Api-Key'] = apiKey;
-
-    try {
-        const result = await axios({ method: req.method, url, headers, data: req.body, timeout: 15000 });
-        res.status(result.status).json(result.data);
-    } catch (err) { res.status(err.response?.status || 500).json(err.response?.data || { error: 'Bridge Bridge Error' }); }
-});
-
 app.get('/', (req, res) => {
     fs.readFile(path.join(__dirname, '..', 'dist', 'index.html'), 'utf8', (err, data) => {
         if (err) return res.status(404).send('Portal missing.');
@@ -343,23 +315,8 @@ app.get('/', (req, res) => {
 });
 app.use(express.static(path.join(__dirname, '..', 'dist')));
 
-const server = app.listen(port, () => {
+app.listen(port, () => {
     console.log(`[NODE_START] Adaptive Pricing Infrastructure v5.2 active on ${port}.`);
     console.log("[SECURITY] Fail-Closed bootstrap verified. Adaptive defense layer active.");
 });
 
-// Hardened WebSocket (v5.2)
-if (apiKey) {
-    const wss = new WebSocket.Server({ noServer: true });
-    server.on('upgrade', (request, socket, head) => {
-        const u = new URL(request.url, `http://${request.headers.host}`);
-        if (u.pathname.startsWith('/api-bridge/v1/models/gemini')) {
-            wss.handleUpgrade(request, socket, head, (clientWs) => {
-                const upWs = new WebSocket(`${externalWsBaseUrl}${u.pathname.substring(12)}?key=${apiKey}`);
-                upWs.on('message', m => clientWs.readyState === WebSocket.OPEN && clientWs.send(m));
-                clientWs.on('message', m => upWs.readyState === WebSocket.OPEN && upWs.send(m));
-                clientWs.on('close', () => upWs.close());
-            });
-        }
-    });
-}
