@@ -96,3 +96,10 @@ export interface BookPriceResponse {
   message?: string;
   offers: BookPriceOffer[];
 }
+
+export interface CartItem {
+  id: string;
+  specs: BookPricePayload;
+  offer: BookPriceOffer;
+  addedAt: string;
+}

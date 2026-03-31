@@ -7,6 +7,7 @@ interface PrintOffersPanelProps {
   loading: boolean;
   error?: string | null;
   onChooseOffer: (offer: BookPriceOffer) => void;
+  addedIds?: Set<string>;
 }
 
 const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
@@ -14,6 +15,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
   loading,
   error,
   onChooseOffer,
+  addedIds = new Set(),
 }) => {
   const [openBreakdownId, setOpenBreakdownId] = useState<string | null>(null);
 
@@ -138,17 +140,24 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
               )}
 
               <div className="flex justify-end pt-4">
-                <button
-                  type="button"
-                  onClick={() => onChooseOffer(offer)}
-                  className={`inline-flex items-center px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300
-                    ${isBest
-                      ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
-                      : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
-                    }`}
-                >
-                  Choose this node
-                </button>
+                {addedIds.has(offer.id) ? (
+                  <span className="inline-flex items-center gap-2 px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase text-corporate-accent border border-corporate-accent/30">
+                    <span className="w-1.5 h-1.5 bg-corporate-accent animate-pulse" />
+                    Added to cart
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onChooseOffer(offer)}
+                    className={`inline-flex items-center px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300
+                      ${isBest
+                        ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
+                        : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
+                      }`}
+                  >
+                    Add to cart →
+                  </button>
+                )}
               </div>
             </div>
           );

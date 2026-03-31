@@ -221,7 +221,7 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
         vault.trackEnd();
 
         // 3. ADAPTIVE RESPONSE DEGRADATION (Layer 5)
-        const hardened = hardenResponse(response.data, session.abuseScore);
+        const hardened = hardenResponse(response.data.print_houses ?? response.data, session.abuseScore);
 
         console.log(`[AUDIT] ADAPTIVE_NODE Calc session=${sessionId} AAS=${session.abuseScore} Latency=${delay} IP=${ipChain}`);
         res.json({ success: true, offers: hardened, mode: session.abuseScore > 10 ? "Degraded" : "Precise" });
@@ -233,6 +233,46 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
     }
 });
 
+// 🛒 CART (In-Memory, session-bound)
+const carts = new Map(); // sessionId -> CartItem[]
+
+app.post('/api/cart/add', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+    const { specs, offer } = req.body;
+    if (!specs || !offer) return res.status(400).json({ error: 'specs and offer required.' });
+    const cart = carts.get(sessionId) || [];
+    const item = { id: crypto.randomBytes(8).toString('hex'), specs, offer, addedAt: new Date().toISOString() };
+    cart.push(item);
+    carts.set(sessionId, cart);
+    res.json({ success: true, item_id: item.id, cart_count: cart.length });
+});
+
+app.get('/api/cart', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+    res.json({ items: carts.get(sessionId) || [] });
+});
+
+app.delete('/api/cart/items/:itemId', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+    const cart = (carts.get(sessionId) || []).filter(i => i.id !== req.params.itemId);
+    carts.set(sessionId, cart);
+    res.json({ success: true, cart_count: cart.length });
+});
+
+app.post('/api/cart/checkout', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+    const cart = carts.get(sessionId) || [];
+    if (!cart.length) return res.status(400).json({ error: 'Cart is empty.' });
+    const orderId = 'ORD-' + Date.now().toString(36).toUpperCase();
+    console.log(`[ORDER] ${orderId} session=${sessionId} items=${cart.length}`, JSON.stringify(cart));
+    carts.set(sessionId, []);
+    res.json({ success: true, order_id: orderId });
+});
+
 // 🔴 REPO BRIDGE (Restricted Allowlists)
 const bridgeAuth = (req, res, next) => {
     if (req.signedCookies['pp_session_id']) return next();
@@ -240,6 +280,45 @@ const bridgeAuth = (req, res, next) => {
 };
 
 app.use('/api-bridge', bridgeAuth);
+
+// 🤖 PPP-AI CHAT: Native Gemini handler (replaces missing WP plugin endpoint)
+app.post('/api-bridge/wp-json/ppp-ai/v1/chat', async (req, res) => {
+    const { system_prompt, messages, ui_state } = req.body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'messages array required.' });
+    }
+
+    const systemText = `${system_prompt || ''}\n\nCurrent UI State (read-only context):\n${JSON.stringify(ui_state || {})}`;
+
+    const contents = messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+    }));
+
+    const geminiPayload = {
+        system_instruction: { parts: [{ text: systemText }] },
+        contents,
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+    };
+
+    try {
+        const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+        const url = `${externalApiBaseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const result = await axios.post(url, geminiPayload, { timeout: 30000 });
+
+        const text = result.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        let parsed;
+        try { parsed = JSON.parse(text); } catch { parsed = { reply: text, specs_patch: {} }; }
+
+        console.log(`[PPP_AI_CHAT] session=${req.signedCookies['pp_session_id']} model=${model}`);
+        res.json(parsed);
+    } catch (err) {
+        console.error('[PPP_AI_CHAT] Gemini error:', err.message);
+        res.status(502).json({ error: 'AI service unavailable.' });
+    }
+});
+
 app.all('/api-bridge/*', async (req, res) => {
     const target = req.params[0] || req.url.substring(12);
     let url;

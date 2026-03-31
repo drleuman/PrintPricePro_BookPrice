@@ -2,6 +2,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from 'react';
 
 // PDF.js (legacy build)
@@ -14,7 +15,6 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 import {
   BOOK_PRICE_API_ENDPOINT,
-  CREATE_ORDER_ENDPOINT,
   BOOK_SIZES_PORTRAIT,
   BOOK_SIZES_LANDSCAPE,
 } from './constants';
@@ -24,12 +24,14 @@ import {
   BookPricePayload,
   BookPriceResponse,
   BookPriceOffer,
+  CartItem,
 } from './types';
 
 import AssistantChat from './components/AssistantChat';
 import PdfUploadDropzone from './components/PdfUploadDropzone';
 import BookPriceForm from './components/BookPriceForm';
 import PrintOffersPanel from './components/PrintOffersPanel';
+import CartPanel from './components/CartPanel';
 
 import { t } from './i18n/en';
 
@@ -200,6 +202,9 @@ const App: React.FC = () => {
 
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const cartRef = useRef<HTMLDivElement>(null);
 
   // Warmup Security Bridge (v5.2)
   useEffect(() => {
@@ -523,140 +528,56 @@ const App: React.FC = () => {
     }
   }, [bookPricePayload]);
 
-  // Elegir oferta => BPE de nuevo + create-order-from-chat
+  // Agregar oferta al carrito
   const handleChooseOffer = useCallback(
     async (offer: BookPriceOffer) => {
       try {
         setCreatingOrder(true);
         setOrderError(null);
-
-        // 1) Prepare Context
-        const baseParams = buildBookPricePayload();
-        const ctx = await getPayloadContext(baseParams);
-
-        // 2) Obtain Bound Challenge
-        const challengeRes = await fetch('/api/security/challenge', { 
+        const specs = buildBookPricePayload();
+        const res = await fetch('/api/cart/add', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ payload_context: ctx })
+          body: JSON.stringify({ specs, offer }),
+          credentials: 'include',
         });
-        if (!challengeRes.ok) throw new Error('Authorization bridge fault.');
-        const { token, nonce, timestamp } = await challengeRes.json();
-
-        // 3) Recalcular ofertas en el backend para obtener print_houses RAW
-        const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...baseParams,
-            security_token: token,
-            nonce,
-            timestamp
-          }),
-        });
-
-        if (!bpeRes.ok) {
-          let msg = `BPE HTTP ${bpeRes.status}`;
-          try {
-            const errData = await bpeRes.json();
-            if (errData?.message) msg = errData.message;
-            if (errData?.error) msg = errData.error;
-          } catch {
-            // ignore
-          }
-          throw new Error(msg);
-        }
-
-        const bpeData = await bpeRes.json();
-
-        const bpeParams =
-          bpeData &&
-            typeof bpeData === 'object' &&
-            bpeData.params &&
-            typeof bpeData.params === 'object'
-            ? bpeData.params
-            : {};
-
-        // 3) paramsPayload: mezcla de lo que tienes en la UI + lo que devuelve el BPE
-        const paramsPayload: any = {
-          ...baseParams,
-          ...bpeParams,
-        };
-
-        // Garantizar book_size siempre presente
-        if (!paramsPayload.book_size) {
-          paramsPayload.book_size =
-            bpeParams.book_size || baseParams.book_size || 'A5';
-        }
-
-        const printHouses: any[] = Array.isArray(bpeData?.print_houses)
-          ? bpeData.print_houses
-          : [];
-
-        if (!printHouses.length) {
-          throw new Error('No print houses returned by Book Price Engine.');
-        }
-
-        // 4) Buscar la casa correcta dentro de print_houses RAW
-        const selectedRaw =
-          printHouses.find(
-            (h: any) =>
-              (h.house_id &&
-                String(h.house_id) === String(offer.id)) ||
-              (h.print_house &&
-                String(h.print_house) === String(offer.print_house))
-          ) || printHouses[0];
-
-        // 5) Payload para create-order-from-chat
-        const orderPayload = {
-          ...paramsPayload, // copia plana (por si el endpoint mira a nivel raíz)
-          params: paramsPayload,
-          print_houses: printHouses,
-          selected_print_house: selectedRaw,
-        };
-
-        const res = await fetch(CREATE_ORDER_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(orderPayload),
-        });
-
-        if (!res.ok) {
-          let msg = `HTTP ${res.status}`;
-          try {
-            const errData = await res.json();
-            if (errData?.message) msg = errData.message;
-            if (errData?.error) msg = errData.error;
-          } catch {
-            // ignore
-          }
-          throw new Error(msg);
-        }
-
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-
-        // Redirect to WooCommerce cart instead of order page
-        // The order is created silently in the background
-        if (data?.cart_url) {
-          window.location.href = data.cart_url;
-        } else if (data?.data?.cart_url) {
-          window.location.href = data.data.cart_url;
-        } else {
-          // Fallback: redirect to cart page directly
-          // The backend should add the item to cart automatically
-          window.location.href = 'https://printprice.pro/cart/';
-        }
+        setCart(prev => [...prev, { id: data.item_id, specs, offer, addedAt: new Date().toISOString() }]);
+        setTimeout(() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       } catch (err: any) {
-        console.error('Error creating print order', err);
-        setOrderError(err?.message || 'Error creating print order.');
+        setOrderError(err?.message || 'Error adding to cart.');
       } finally {
         setCreatingOrder(false);
       }
     },
     [bookPricePayload]
   );
+
+  const handleRemoveFromCart = useCallback(async (itemId: string) => {
+    try {
+      await fetch(`/api/cart/items/${itemId}`, { method: 'DELETE', credentials: 'include' });
+      setCart(prev => prev.filter(i => i.id !== itemId));
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const handleCheckout = useCallback(async () => {
+    try {
+      setCreatingOrder(true);
+      setOrderError(null);
+      const res = await fetch('/api/cart/checkout', { method: 'POST', credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setOrderSuccess(data.order_id);
+      setCart([]);
+    } catch (err: any) {
+      setOrderError(err?.message || 'Checkout error.');
+    } finally {
+      setCreatingOrder(false);
+    }
+  }, []);
 
   const combinedOffersError = orderError || null;
 
@@ -719,21 +640,54 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* Right: Offers */}
-          <div className="flex flex-col h-full">
+          {/* Right: Offers + Cart */}
+          <div className="flex flex-col gap-6">
             <PrintOffersPanel
               offers={offers}
-              loading={loadingOffers || creatingOrder}
+              loading={loadingOffers}
               error={combinedOffersError}
               onChooseOffer={handleChooseOffer}
+              addedIds={new Set(cart.map(i => i.offer.id))}
             />
+
+            {!orderSuccess && (
+              <div ref={cartRef}>
+              <CartPanel
+                cart={cart}
+                checkingOut={creatingOrder}
+                onRemove={handleRemoveFromCart}
+                onCheckout={handleCheckout}
+              />
+              </div>
+            )}
+
+            {orderSuccess && (
+              <div className="bg-corporate-secondary border border-corporate-accent/30 p-8 flex items-start gap-6">
+                <div className="w-2 h-2 mt-1 bg-corporate-accent shrink-0" />
+                <div>
+                  <p className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent uppercase mb-2">
+                    Order confirmed — {orderSuccess}
+                  </p>
+                  <p className="text-sm text-corporate-text-secondary">
+                    Your print order has been received. We'll be in touch shortly to confirm details and next steps.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOrderSuccess(null)}
+                    className="mt-4 text-[10px] font-technical font-black tracking-monolith text-corporate-muted hover:text-corporate-accent uppercase transition-colors"
+                  >
+                    [×] Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             {!pdfFile &&
               !bookPricePayload.total_page_count &&
               !loadingPdf &&
               !loadingOffers &&
               !offers && (
-                <div className="mt-6 flex-1 flex items-center justify-center border border-white/5 bg-corporate-secondary p-12">
+                <div className="flex-1 flex items-center justify-center border border-white/5 bg-corporate-secondary p-12">
                   <div className="text-center text-corporate-muted font-technical text-xs tracking-widest uppercase">
                     {t('enter_specs_or_upload_pdf')}
                   </div>
