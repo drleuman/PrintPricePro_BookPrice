@@ -46,9 +46,6 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
   if (!offers || !offers.offers.length) {
     return (
       <div className="bg-corporate-secondary p-12 border border-white/5 relative overflow-hidden">
-        <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[8rem] font-black pointer-events-none uppercase">
-          NULL
-        </div>
         <p className="text-[0.6rem] font-technical font-black tracking-monolith text-corporate-muted uppercase mb-4">status: waiting_for_input</p>
         <p className="text-xs text-corporate-text-secondary leading-relaxed uppercase tracking-wider">
           {t('enter_specs_or_upload_pdf')}

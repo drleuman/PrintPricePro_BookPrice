@@ -32,6 +32,7 @@ import PdfUploadDropzone from './components/PdfUploadDropzone';
 import BookPriceForm from './components/BookPriceForm';
 import PrintOffersPanel from './components/PrintOffersPanel';
 import CartPanel from './components/CartPanel';
+import Header from './components/Header';
 
 import { t } from './i18n/en';
 
@@ -148,8 +149,6 @@ const App: React.FC = () => {
     }
   }, [isDark]);
 
-  const toggleTheme = () => setIsDark(!isDark);
-
   const [bookPricePayload, setBookPricePayload] =
     useState<InitialBookPricePayload>({
       // Basic info
@@ -204,7 +203,7 @@ const App: React.FC = () => {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
-  const cartRef = useRef<HTMLDivElement>(null);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const offersRef = useRef<HTMLDivElement>(null);
 
   // Warmup Security Bridge (v5.2)
@@ -546,7 +545,7 @@ const App: React.FC = () => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setCart(prev => [...prev, { id: data.item_id, specs, offer, addedAt: new Date().toISOString() }]);
-        setTimeout(() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+        setIsCartOpen(true);
       } catch (err: any) {
         setOrderError(err?.message || 'Error adding to cart.');
       } finally {
@@ -574,6 +573,7 @@ const App: React.FC = () => {
       const data = await res.json();
       setOrderSuccess(data.order_id);
       setCart([]);
+      setIsCartOpen(false);
     } catch (err: any) {
       setOrderError(err?.message || 'Checkout error.');
     } finally {
@@ -587,14 +587,19 @@ const App: React.FC = () => {
     <div className="flex flex-col min-h-screen bg-corporate-primary selection:bg-corporate-accent selection:text-white">
       {/* Honeypot Node - Anti-Bot */}
       <input type="text" id="hp_node" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
-      
+
+      <Header
+        cartCount={cart.length}
+        onCartClick={() => setIsCartOpen(prev => !prev)}
+        isDark={isDark}
+        onThemeToggle={() => setIsDark(prev => !prev)}
+      />
+
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
         {/* Asistente IA arriba, a ancho completo */}
         <AssistantChat
           specs={bookPricePayload}
           offers={offers}
-          isDark={isDark}
-          onToggleTheme={toggleTheme}
           onSpecsPatch={(patch) => {
             console.log("BEFORE PATCH specs:", bookPricePayload);
             console.log("PATCH RECEIVED:", patch);
@@ -642,7 +647,7 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* Right: Offers + Cart */}
+          {/* Right: Offers */}
           <div className="flex flex-col gap-6">
             <div ref={offersRef}>
             <PrintOffersPanel
@@ -653,17 +658,6 @@ const App: React.FC = () => {
               addedIds={new Set(cart.map(i => i.offer.id))}
             />
             </div>
-
-            {!orderSuccess && (
-              <div ref={cartRef}>
-              <CartPanel
-                cart={cart}
-                checkingOut={creatingOrder}
-                onRemove={handleRemoveFromCart}
-                onCheckout={handleCheckout}
-              />
-              </div>
-            )}
 
             {orderSuccess && (
               <div className="bg-corporate-secondary border border-corporate-accent/30 p-8 flex items-start gap-6">
@@ -700,6 +694,16 @@ const App: React.FC = () => {
           </div>
         </section>
       </main>
+
+      {/* Cart slide-over */}
+      <CartPanel
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        checkingOut={creatingOrder}
+        onRemove={handleRemoveFromCart}
+        onCheckout={handleCheckout}
+      />
     </div>
   );
 };

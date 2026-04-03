@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT, BOOK_PRICE_API_ENDPOINT } from '../constants';
 import { InitialBookPricePayload, BookPriceResponse } from '../types';
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
-import { SunIcon, MoonIcon } from '@heroicons/react/24/outline';
 import { t } from '../i18n/en';
 
 type ChatRole = 'user' | 'assistant';
@@ -24,8 +23,6 @@ interface AssistantChatProps {
   onSpecsPatch: (patch: Partial<InitialBookPricePayload>) => void;
   onOffersUpdate: (offers: BookPriceResponse) => void;
   onChooseOffer: (offer: any) => Promise<void>;
-  isDark?: boolean;
-  onToggleTheme?: () => void;
 }
 
 // Security Layer 2: Challenge Context Helper (v5.2)
@@ -65,8 +62,6 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   onSpecsPatch,
   onOffersUpdate,
   onChooseOffer,
-  isDark,
-  onToggleTheme,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -461,33 +456,15 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
           AI_LOG
         </div>
         <div className="bg-corporate-primary/50 pl-10 pr-6 py-6 flex items-center justify-between border-b border-white/5 relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 flex items-center justify-center">
-              <img src="/logo.png" alt="PrintPrice Pro" className="w-8 h-8 object-contain" />
-            </div>
-            <div>
-              <h2 className="text-xs font-technical font-black tracking-monolith text-corporate-text uppercase">
-                PrintPrice Pro – AI Assistant
-              </h2>
-              <p className="text-[10px] text-corporate-muted font-technical uppercase tracking-widest mt-2">
-                status: optimal_routing / nodes: active
-              </p>
-            </div>
+          <div>
+            <h2 className="text-xs font-technical font-black tracking-monolith text-corporate-text uppercase">
+              AI Assistant
+            </h2>
+            <p className="text-[10px] text-corporate-muted font-technical uppercase tracking-widest mt-2">
+              status: optimal_routing / nodes: active
+            </p>
           </div>
           <div className="flex items-center gap-6">
-            {onToggleTheme && (
-              <button
-                onClick={onToggleTheme}
-                className="p-2 border border-white/5 bg-corporate-primary/50 text-corporate-muted hover:text-corporate-accent hover:border-corporate-accent/20 transition-all active:scale-95 group"
-                title={isDark ? 'Switch to LIGHT_SYSTEM' : 'Switch to DARK_SYSTEM'}
-              >
-                {isDark ? (
-                  <SunIcon className="w-4 h-4" />
-                ) : (
-                  <MoonIcon className="w-4 h-4" />
-                )}
-              </button>
-            )}
             <div className="flex items-center gap-3 bg-corporate-accent/5 px-4 py-2 border border-corporate-accent/20">
               <div className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-corporate-accent opacity-75"></span>

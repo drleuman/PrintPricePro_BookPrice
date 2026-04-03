@@ -17,6 +17,21 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
+    },
+    build: {
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('pdfjs-dist')) {
+                return 'pdfjs-vendor';
+              }
+              return 'vendor';
+            }
+          }
+        }
+      }
     }
   };
 });
