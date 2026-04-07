@@ -7,7 +7,7 @@ interface PrintOffersPanelProps {
   loading: boolean;
   error?: string | null;
   onChooseOffer: (offer: BookPriceOffer) => void;
-  addedIds?: Set<string>;
+  selectedOfferId?: string | null;
 }
 
 const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
@@ -15,7 +15,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
   loading,
   error,
   onChooseOffer,
-  addedIds = new Set(),
+  selectedOfferId,
 }) => {
   const [openBreakdownId, setOpenBreakdownId] = useState<string | null>(null);
 
@@ -72,13 +72,14 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
       <div className="space-y-6">
         {topThree.map((offer, index) => {
           const isBest = index === 0;
+          const isSelected = selectedOfferId === offer.id;
           const isOpen = openBreakdownId === offer.id;
 
           return (
             <div
               key={offer.id}
               className={`border p-8 flex flex-col gap-6 transition-all duration-300 relative group overflow-hidden ${
-                isBest ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-corporate-text/10 bg-corporate-primary/50'
+                isSelected ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-corporate-text/10 bg-corporate-primary/50'
               }`}
             >
               <div className="absolute top-0 right-0 h-1 bg-corporate-accent w-0 group-hover:w-full transition-all duration-500" />
@@ -137,7 +138,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
               )}
 
               <div className="flex justify-end pt-4">
-                {addedIds.has(offer.id) ? (
+                {selectedOfferId === offer.id ? (
                   <span className="inline-flex items-center gap-2 px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase text-corporate-accent border border-corporate-accent/30">
                     <span className="w-1.5 h-1.5 bg-corporate-accent animate-pulse" />
                     Added to cart
@@ -152,7 +153,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                         : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
                       }`}
                   >
-                    Add to cart →
+                    {selectedOfferId ? 'Replace in cart →' : 'Add to cart →'}
                   </button>
                 )}
               </div>

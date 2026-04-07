@@ -345,7 +345,7 @@ const App: React.FC = () => {
           '';
 
         return {
-          id: String(raw.house_id ?? raw.id ?? `offer-${index}`),
+          id: String(raw.house_id ?? raw.id ?? 'offer') + `-${index}`,
           print_house:
             raw.print_house ||
             raw.print_house_name ||
@@ -529,12 +529,21 @@ const App: React.FC = () => {
     }
   }, [bookPricePayload]);
 
-  // Agregar oferta al carrito
+  // Agregar oferta al carrito (solo 1 oferta del set actual)
   const handleChooseOffer = useCallback(
     async (offer: BookPriceOffer) => {
       try {
         setCreatingOrder(true);
         setOrderError(null);
+
+        // Remove existing cart item from the current offers set (if any)
+        const currentOfferIds = new Set(offers?.offers?.map(o => o.id) ?? []);
+        const existingItem = cart.find(i => currentOfferIds.has(i.offer.id));
+        if (existingItem) {
+          await fetch(`/api/cart/items/${existingItem.id}`, { method: 'DELETE', credentials: 'include' });
+          setCart(prev => prev.filter(i => i.id !== existingItem.id));
+        }
+
         const specs = buildBookPricePayload();
         const res = await fetch('/api/cart/add', {
           method: 'POST',
@@ -552,7 +561,7 @@ const App: React.FC = () => {
         setCreatingOrder(false);
       }
     },
-    [bookPricePayload]
+    [bookPricePayload, offers, cart]
   );
 
   const handleRemoveFromCart = useCallback(async (itemId: string) => {
@@ -612,6 +621,7 @@ const App: React.FC = () => {
           }}
           onOffersUpdate={(newOffers) => setOffers(newOffers)}
           onChooseOffer={handleChooseOffer}
+          selectedOfferId={cart.find(i => new Set(offers?.offers?.map(o => o.id) ?? []).has(i.offer.id))?.offer.id ?? null}
         />
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
@@ -655,7 +665,7 @@ const App: React.FC = () => {
               loading={loadingOffers}
               error={combinedOffersError}
               onChooseOffer={handleChooseOffer}
-              addedIds={new Set(cart.map(i => i.offer.id))}
+              selectedOfferId={cart.find(i => new Set(offers?.offers?.map(o => o.id) ?? []).has(i.offer.id))?.offer.id ?? null}
             />
             </div>
 

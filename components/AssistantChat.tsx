@@ -23,6 +23,7 @@ interface AssistantChatProps {
   onSpecsPatch: (patch: Partial<InitialBookPricePayload>) => void;
   onOffersUpdate: (offers: BookPriceResponse) => void;
   onChooseOffer: (offer: any) => Promise<void>;
+  selectedOfferId?: string | null;
 }
 
 // Security Layer 2: Challenge Context Helper (v5.2)
@@ -62,6 +63,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   onSpecsPatch,
   onOffersUpdate,
   onChooseOffer,
+  selectedOfferId,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -388,7 +390,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               healedOffers = {
                 success: true,
                 offers: rawOffers.map((o: any, idx: number) => ({
-                  id: String(o.house_id || o.id || `healed-${idx}`),
+                  id: String(o.house_id || o.id || 'healed') + `-${idx}`,
                   print_house: o.print_house || 'Print house',
                   total_cost: o.total_cost || o.total_price || 0,
                   currency: o.currency || 'EUR',
@@ -483,9 +485,11 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[75%] p-6 transition-all duration-300 ${m.role === 'user'
-                  ? 'bg-corporate-accent text-white border-l-4 border-white/20'
-                  : 'bg-corporate-elevated/20 text-corporate-text border border-corporate-text/10'
+                className={`max-w-[75%] transition-all duration-300 ${m.role === 'user'
+                  ? 'p-6 bg-corporate-accent text-white border-l-4 border-white/20'
+                  : m.kind === 'offers'
+                    ? 'text-corporate-text w-full'
+                    : 'p-6 bg-corporate-elevated/20 text-corporate-text border border-corporate-text/10'
                   }`}
               >
                 {m.content.includes('Project Summary') ? (
@@ -514,23 +518,61 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                       {offers?.offers?.length ? (
                         [...offers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
                           const isBest = index === 0;
+                          const isSelected = selectedOfferId === offer.id;
                           return (
-                            <button
+                            <div
                               key={offer.id}
-                              onClick={() => onChooseOffer(offer)}
-                              className={`w-full text-left p-4 transition-all duration-300 group relative overflow-hidden border ${
-                                isBest ? 'bg-corporate-accent/5 border-corporate-accent/40' : 'bg-corporate-primary border-corporate-text/10'
-                              } hover:bg-corporate-accent/10 hover:border-corporate-accent/20`}
+                              className={`border p-6 flex flex-col gap-4 transition-all duration-300 relative group overflow-hidden ${
+                                isSelected ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-corporate-text/10 bg-transparent'
+                              }`}
                             >
-                              <div className="flex justify-between items-start mb-3">
-                                <span className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith group-hover:text-corporate-accent transition-colors">{offer.print_house}</span>
-                                <span className="text-base font-display font-black text-corporate-text">{offer.total_cost.toLocaleString()} <span className="text-corporate-accent text-xs">{offer.currency}</span></span>
+                              <div className="absolute top-0 right-0 h-1 bg-corporate-accent w-0 group-hover:w-full transition-all duration-500" />
+                              <div className="flex justify-between items-center gap-4 relative z-10">
+                                <div>
+                                  <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith mb-2">
+                                    {offer.print_house}
+                                  </p>
+                                  {offer.estimated_delivery_time && (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
+                                      <p className="text-[10px] font-technical text-corporate-muted uppercase tracking-wider">
+                                        ETA: {offer.estimated_delivery_time}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right">
+                                    <p className="text-2xl font-display font-black text-corporate-text tracking-tighter">
+                                      {offer.total_cost.toFixed(2)} <span className="text-corporate-accent text-sm">{offer.currency}</span>
+                                    </p>
+                                    {isBest && (
+                                      <p className="text-[10px] text-corporate-accent font-technical font-black uppercase tracking-monolith mt-1">
+                                        OPTIMAL_VALUE
+                                      </p>
+                                    )}
+                                  </div>
+                                  {isSelected ? (
+                                    <span className="inline-flex items-center gap-2 px-6 py-2 text-xs font-technical font-black tracking-monolith uppercase text-corporate-accent border border-corporate-accent/30 shrink-0">
+                                      <span className="w-1.5 h-1.5 bg-corporate-accent animate-pulse" />
+                                      Added to cart
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => onChooseOffer(offer)}
+                                      className={`inline-flex items-center px-6 py-2 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300 shrink-0
+                                        ${isBest
+                                          ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
+                                          : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
+                                        }`}
+                                    >
+                                      {selectedOfferId ? 'Replace in cart →' : 'Add to cart →'}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-3">
-                                <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
-                                <span className="text-[10px] font-technical text-corporate-muted uppercase tracking-widest">{offer.estimated_delivery_time || 'Check delivery'}</span>
-                              </div>
-                            </button>
+                            </div>
                           );
                         })
                       ) : (
