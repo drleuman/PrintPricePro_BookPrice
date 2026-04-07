@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShoppingCartIcon, SunIcon, MoonIcon } from '@heroicons/react/24/outline';
 import UserMenu from './UserMenu';
+import type { AuthUser } from './UserMenu';
 
 const PPOSLogo = ({ className = 'h-9 w-9' }: { className?: string }) => (
   <svg
@@ -23,9 +24,12 @@ interface HeaderProps {
   onCartClick: () => void;
   isDark: boolean;
   onThemeToggle: () => void;
+  user: AuthUser | null;
+  onOpenAuthModal: () => void;
+  onLogout: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ cartCount, onCartClick, isDark, onThemeToggle }) => {
+const Header: React.FC<HeaderProps> = ({ cartCount, onCartClick, isDark, onThemeToggle, user, onOpenAuthModal, onLogout }) => {
   return (
     <header className="sticky top-0 z-50 bg-corporate-secondary border-b border-white/10">
       <div className="container mx-auto px-6 md:px-10 max-w-[1400px] h-20 flex items-center justify-between">
@@ -84,7 +88,7 @@ const Header: React.FC<HeaderProps> = ({ cartCount, onCartClick, isDark, onTheme
           <div className="h-5 w-px bg-white/10 mx-1 hidden md:block" />
 
           {/* User menu */}
-          <UserMenu />
+          <UserMenu user={user} onOpenModal={onOpenAuthModal} onLogout={onLogout} />
         </div>
       </div>
     </header>

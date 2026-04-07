@@ -33,6 +33,8 @@ import BookPriceForm from './components/BookPriceForm';
 import PrintOffersPanel from './components/PrintOffersPanel';
 import CartPanel from './components/CartPanel';
 import Header from './components/Header';
+import { AuthModal } from './components/UserMenu';
+import type { AuthUser } from './components/UserMenu';
 
 import { t } from './i18n/en';
 
@@ -126,6 +128,8 @@ async function getPayloadContext(data: any) {
 
 const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [payloadVersion, setPayloadVersion] = useState(0);
@@ -602,6 +606,9 @@ const App: React.FC = () => {
         onCartClick={() => setIsCartOpen(prev => !prev)}
         isDark={isDark}
         onThemeToggle={() => setIsDark(prev => !prev)}
+        user={user}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onLogout={() => setUser(null)}
       />
 
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
@@ -713,7 +720,19 @@ const App: React.FC = () => {
         checkingOut={creatingOrder}
         onRemove={handleRemoveFromCart}
         onCheckout={handleCheckout}
+        isLoggedIn={!!user}
+        onSignInClick={() => setAuthModalOpen(true)}
       />
+
+      {authModalOpen && (
+        <AuthModal
+          onClose={() => setAuthModalOpen(false)}
+          onLoginSuccess={(loggedInUser) => {
+            setUser(loggedInUser);
+            setAuthModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { XMarkIcon, ShoppingCartIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ShoppingCartIcon, LockClosedIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { CartItem } from '../types';
 
 interface CartPanelProps {
@@ -9,6 +9,8 @@ interface CartPanelProps {
   checkingOut: boolean;
   onRemove: (itemId: string) => void;
   onCheckout: () => void;
+  isLoggedIn: boolean;
+  onSignInClick: () => void;
 }
 
 const CartPanel: React.FC<CartPanelProps> = ({
@@ -18,6 +20,8 @@ const CartPanel: React.FC<CartPanelProps> = ({
   checkingOut,
   onRemove,
   onCheckout,
+  isLoggedIn,
+  onSignInClick,
 }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -130,7 +134,30 @@ const CartPanel: React.FC<CartPanelProps> = ({
               </div>
             </div>
 
-            {!confirmOpen ? (
+            {!isLoggedIn ? (
+              <div className="space-y-4">
+                <div className="flex items-start gap-4 p-4 border border-corporate-accent/20 bg-corporate-accent/5">
+                  <LockClosedIcon className="w-4 h-4 text-corporate-accent shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[0.65rem] font-technical font-black tracking-monolith text-corporate-accent uppercase mb-1">
+                      Sign in required
+                    </p>
+                    <p className="text-[11px] text-corporate-text-secondary leading-relaxed">
+                      You need an account to place your order and track delivery.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onSignInClick}
+                  className="w-full py-3 flex items-center justify-center gap-3 text-xs font-technical font-black tracking-monolith uppercase bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)] transition-all duration-300"
+                >
+                  <LockClosedIcon className="w-3.5 h-3.5" />
+                  Sign in to place your order
+                  <ArrowRightIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : !confirmOpen ? (
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}

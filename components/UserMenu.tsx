@@ -275,10 +275,14 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
 // ---------------------------------------------------------------------------
 // UserMenu
 // ---------------------------------------------------------------------------
-const UserMenu: React.FC = () => {
+interface UserMenuProps {
+  user: AuthUser | null;
+  onOpenModal: () => void;
+  onLogout: () => void;
+}
+
+const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(null);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -331,22 +335,13 @@ const UserMenu: React.FC = () => {
 
   const openSignIn = useCallback(() => {
     setIsOpen(false);
-    setModalOpen(true);
-  }, []);
+    onOpenModal();
+  }, [onOpenModal]);
 
-  const handleLoginSuccess = useCallback((loggedInUser: AuthUser) => {
-    setUser(loggedInUser);
-  }, []);
-
-  const handleLogout = useCallback(() => {
+  const handleLogoutClick = useCallback(() => {
     setIsOpen(false);
-    setUser(null);
-  }, []);
-
-  const handleCloseModal = useCallback(() => {
-    setModalOpen(false);
-    setTimeout(() => triggerRef.current?.focus(), 0);
-  }, []);
+    onLogout();
+  }, [onLogout]);
 
   return (
     <>
@@ -418,7 +413,7 @@ const UserMenu: React.FC = () => {
                 <MenuButton
                   icon={<ArrowLeftOnRectangleIcon className="w-4 h-4" />}
                   label="Sign out"
-                  onClick={handleLogout}
+                  onClick={handleLogoutClick}
                   danger
                 />
               </div>
@@ -426,10 +421,11 @@ const UserMenu: React.FC = () => {
           </div>
         )}
       </div>
-
-      {modalOpen && <AuthModal onClose={handleCloseModal} onLoginSuccess={handleLoginSuccess} />}
     </>
   );
 };
+
+export { AuthModal };
+export type { AuthUser };
 
 export default UserMenu;
