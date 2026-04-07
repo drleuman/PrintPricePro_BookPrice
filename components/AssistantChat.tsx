@@ -11,6 +11,7 @@ interface ChatMessage {
   role: ChatRole;
   content: string;
   kind?: 'text' | 'offers';
+  offersSnapshot?: BookPriceResponse;
   ui?: {
     show_offers?: boolean;
     recommended_offer_ids?: string[];
@@ -76,6 +77,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedOfferBubbleId, setSelectedOfferBubbleId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -357,7 +359,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       // but we now have valid pages, fetch offers manually with security handshake.
       let healedOffers = data.offers;
       const validPages = Number(appliedSpecs.interior_pages) > 0;
-      
+
       if (!healedOffers?.offers?.length && validPages) {
         console.log('Backend failed to provide offers. Performing auto-healing handshake...');
         try {
@@ -421,6 +423,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
             role: 'assistant',
             content: '',
             kind: 'offers',
+            offersSnapshot: healedOffers ?? undefined,
             ui: {
               show_offers: true,
               recommended_offer_ids: data.ui?.recommended_offer_ids || [],
@@ -515,10 +518,10 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                       {t('recommended_offers') || 'Recommended Offers'}
                     </p>
                     <div className="space-y-3">
-                      {offers?.offers?.length ? (
-                        [...offers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
+                      {(() => { const displayOffers = m.offersSnapshot ?? offers; return displayOffers?.offers?.length ? (
+                        [...displayOffers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
                           const isBest = index === 0;
-                          const isSelected = selectedOfferId === offer.id;
+                          const isSelected = selectedOfferId === offer.id && selectedOfferBubbleId === m.id;
                           return (
                             <div
                               key={offer.id}
@@ -560,7 +563,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => onChooseOffer(offer)}
+                                      onClick={() => { setSelectedOfferBubbleId(m.id); if (m.offersSnapshot) onOffersUpdate(m.offersSnapshot); onChooseOffer(offer); }}
                                       className={`inline-flex items-center px-6 py-2 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300 shrink-0
                                         ${isBest
                                           ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
@@ -579,7 +582,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                         <div className="text-[10px] font-technical text-corporate-muted uppercase tracking-widest italic py-4">
                           node_calculation in progress...
                         </div>
-                      )}
+                      ); })()}
                     </div>
                   </div>
                 ) : (
