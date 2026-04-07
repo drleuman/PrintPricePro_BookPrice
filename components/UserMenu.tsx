@@ -64,7 +64,13 @@ const MenuButton: React.FC<{
 // ---------------------------------------------------------------------------
 type AuthMode = 'LOGIN' | 'REGISTER';
 
-const AuthModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+interface AuthUser {
+  email: string;
+  name?: string;
+  token?: string;
+}
+
+const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser) => void }> = ({ onClose, onLoginSuccess }) => {
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -94,8 +100,18 @@ const AuthModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setError(null);
     setLoading(true);
     try {
-      // TODO: login / register logic
-      await new Promise(r => setTimeout(r, 800)); // stub delay
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.message || data?.error || 'Invalid credentials. Please try again.');
+        return;
+      }
+      onLoginSuccess({ email, name: data?.name ?? data?.user?.name, token: data?.token ?? data?.access_token });
+      onClose();
     } catch {
       setError('Connection error. Please try again.');
     } finally {
@@ -262,6 +278,7 @@ const AuthModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 const UserMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -317,9 +334,13 @@ const UserMenu: React.FC = () => {
     setModalOpen(true);
   }, []);
 
+  const handleLoginSuccess = useCallback((loggedInUser: AuthUser) => {
+    setUser(loggedInUser);
+  }, []);
+
   const handleLogout = useCallback(() => {
     setIsOpen(false);
-    // TODO: logout logic
+    setUser(null);
   }, []);
 
   const handleCloseModal = useCallback(() => {
@@ -370,34 +391,43 @@ const UserMenu: React.FC = () => {
               <div className="text-[0.6rem] font-technical font-black text-corporate-muted uppercase tracking-monolith">
                 Account
               </div>
-              <div className="mt-1 text-[0.75rem] font-technical text-corporate-text-secondary italic">
-                Not signed in
+              <div className="mt-1 text-[0.75rem] font-technical text-corporate-text-secondary italic truncate">
+                {user ? (user.name || user.email) : 'Not signed in'}
               </div>
+              {user && (
+                <div className="mt-0.5 text-[0.65rem] font-mono text-corporate-muted truncate">
+                  {user.email}
+                </div>
+              )}
             </div>
 
             {/* Actions */}
-            <div className="p-2 flex flex-col gap-0.5">
-              <MenuButton
-                icon={<UserIcon className="w-4 h-4" />}
-                label="Sign in"
-                onClick={openSignIn}
-              />
-            </div>
+            {!user && (
+              <div className="p-2 flex flex-col gap-0.5">
+                <MenuButton
+                  icon={<UserIcon className="w-4 h-4" />}
+                  label="Sign in"
+                  onClick={openSignIn}
+                />
+              </div>
+            )}
 
             {/* Sign out */}
-            <div className="p-2 border-t border-white/5 bg-corporate-elevated/30">
-              <MenuButton
-                icon={<ArrowLeftOnRectangleIcon className="w-4 h-4" />}
-                label="Sign out"
-                onClick={handleLogout}
-                danger
-              />
-            </div>
+            {user && (
+              <div className="p-2 border-t border-white/5 bg-corporate-elevated/30">
+                <MenuButton
+                  icon={<ArrowLeftOnRectangleIcon className="w-4 h-4" />}
+                  label="Sign out"
+                  onClick={handleLogout}
+                  danger
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {modalOpen && <AuthModal onClose={handleCloseModal} />}
+      {modalOpen && <AuthModal onClose={handleCloseModal} onLoginSuccess={handleLoginSuccess} />}
     </>
   );
 };

@@ -31,6 +31,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
+const authLoginUrl = 'https://preflight.printprice.pro/api/auth/login';
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
 const signingSecret = process.env.SIGNING_SECRET;
@@ -228,6 +229,35 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
         res.status(502).json({ error: 'Infrastructure Safeguard: External node timeout or upstream BPE fault. Calculation failed to bridge safely.' });
     }
 });
+
+// 🔐 AUTH PROXY
+app.post('/api/auth/login',
+    rateLimit({ windowMs: 60000, max: 10, keyGenerator: (req) => req.ip }),
+    [
+        body('email').isEmail().normalizeEmail(),
+        body('password').isLength({ min: 1 }),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid credentials format.' });
+
+        const { email, password } = req.body;
+        try {
+            const response = await axios.post(authLoginUrl, { email, password }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 10000,
+            });
+            res.status(response.status).json(response.data);
+        } catch (err) {
+            if (err.response) {
+                res.status(err.response.status).json(err.response.data);
+            } else {
+                console.error('[AUTH_PROXY] Error:', err.message);
+                res.status(502).json({ error: 'Auth service unavailable.' });
+            }
+        }
+    }
+);
 
 // 🛒 CART (In-Memory, session-bound)
 const carts = new Map(); // sessionId -> CartItem[]
