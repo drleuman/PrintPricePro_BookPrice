@@ -581,10 +581,15 @@ const App: React.FC = () => {
     try {
       setCreatingOrder(true);
       setOrderError(null);
-      const res = await fetch('/api/cart/checkout', { method: 'POST', credentials: 'include' });
+      const res = await fetch('/api/cart/checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user?.user_id }),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setOrderSuccess(data.order_id);
+      setOrderSuccess(data.order_ref ?? data.order_id);
       setCart([]);
       setIsCartOpen(false);
     } catch (err: any) {
@@ -592,7 +597,7 @@ const App: React.FC = () => {
     } finally {
       setCreatingOrder(false);
     }
-  }, []);
+  }, [user]);
 
   const combinedOffersError = orderError || null;
 

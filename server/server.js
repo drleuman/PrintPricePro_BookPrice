@@ -32,6 +32,8 @@ const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
 const authLoginUrl = 'https://preflight.printprice.pro/api/auth/login';
+const controlPlaneOrdersUrl = 'https://control.printprice.pro/api/admin/orders';
+const controlPlaneApiKey = process.env.CONTROL_PLANE_API_KEY;
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
 const signingSecret = process.env.SIGNING_SECRET;
@@ -288,15 +290,63 @@ app.delete('/api/cart/items/:itemId', (req, res) => {
     res.json({ success: true, cart_count: cart.length });
 });
 
-app.post('/api/cart/checkout', (req, res) => {
+app.post('/api/cart/checkout', async (req, res) => {
     const sessionId = req.signedCookies['pp_session_id'];
     if (!sessionId) return res.status(401).json({ error: 'No session.' });
     const cart = carts.get(sessionId) || [];
     if (!cart.length) return res.status(400).json({ error: 'Cart is empty.' });
-    const orderId = 'ORD-' + Date.now().toString(36).toUpperCase();
-    console.log(`[ORDER] ${orderId} session=${sessionId} items=${cart.length}`, JSON.stringify(cart));
+
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required.' });
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (controlPlaneApiKey) headers['x-api-key'] = controlPlaneApiKey;
+
+    const createdOrders = [];
+    try {
+        for (const item of cart) {
+            const order_ref = 'PPP-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+            const payload = {
+                order_ref,
+                user_id,
+                specs: item.specs,
+                offer_print_house: item.offer.print_house,
+                offer_price: item.offer.total_cost,
+                status: 'pending',
+            };
+            const response = await axios.post(controlPlaneOrdersUrl, payload, { headers, timeout: 10000 });
+            createdOrders.push(response.data.order);
+        }
+    } catch (err) {
+        console.error('[CHECKOUT] Error submitting order to control plane:', err.response?.data || err.message);
+        return res.status(502).json({ error: 'Failed to submit order. Please try again.' });
+    }
+
     carts.set(sessionId, []);
-    res.json({ success: true, order_id: orderId });
+    const firstRef = createdOrders[0]?.order_ref ?? createdOrders[0]?.id ?? 'unknown';
+    console.log(`[ORDER] Submitted ${createdOrders.length} order(s) session=${sessionId} first_ref=${firstRef}`);
+    res.json({ success: true, order_ref: firstRef, orders: createdOrders });
+});
+
+// 📋 USER ORDERS PROXY
+app.get('/api/orders', async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required.' });
+
+    const headers = {};
+    if (controlPlaneApiKey) headers['x-api-key'] = controlPlaneApiKey;
+
+    try {
+        const response = await axios.get(controlPlaneOrdersUrl, {
+            params: { user_id },
+            headers,
+            timeout: 10000,
+        });
+        res.json(response.data);
+    } catch (err) {
+        console.error('[ORDERS] Error fetching user orders:', err.response?.data || err.message);
+        res.status(502).json({ error: 'Failed to fetch orders.' });
+    }
 });
 
 // 🤖 AI CHAT

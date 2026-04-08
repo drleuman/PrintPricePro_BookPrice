@@ -9,7 +9,9 @@ import {
   ArrowRightIcon,
   ArrowPathIcon,
   ShieldCheckIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
+import UserOrders from './UserOrders';
 
 // ---------------------------------------------------------------------------
 // PPOSLogo (local copy — same SVG as Header)
@@ -68,6 +70,7 @@ interface AuthUser {
   email: string;
   name?: string;
   token?: string;
+  user_id?: string | number;
 }
 
 const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser) => void }> = ({ onClose, onLoginSuccess }) => {
@@ -110,7 +113,12 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
         setError(data?.message || data?.error || 'Invalid credentials. Please try again.');
         return;
       }
-      onLoginSuccess({ email, name: data?.name ?? data?.user?.name, token: data?.token ?? data?.access_token });
+      onLoginSuccess({
+        email,
+        name: data?.name ?? data?.user?.name,
+        token: data?.token ?? data?.access_token,
+        user_id: data?.user_id ?? data?.user?.id ?? data?.id,
+      });
       onClose();
     } catch {
       setError('Connection error. Please try again.');
@@ -283,6 +291,7 @@ interface UserMenuProps {
 
 const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -407,6 +416,17 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
               </div>
             )}
 
+            {/* Authenticated actions */}
+            {user && (
+              <div className="p-2 flex flex-col gap-0.5">
+                <MenuButton
+                  icon={<ClipboardDocumentListIcon className="w-4 h-4" />}
+                  label="My Orders"
+                  onClick={() => { setIsOpen(false); setShowOrders(true); }}
+                />
+              </div>
+            )}
+
             {/* Sign out */}
             {user && (
               <div className="p-2 border-t border-white/5 bg-corporate-elevated/30">
@@ -421,6 +441,13 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
           </div>
         )}
       </div>
+
+      {showOrders && user?.user_id && (
+        <UserOrders
+          userId={user.user_id}
+          onClose={() => setShowOrders(false)}
+        />
+      )}
     </>
   );
 };
