@@ -35,6 +35,8 @@ import CartPanel from './components/CartPanel';
 import Header from './components/Header';
 import { AuthModal } from './components/UserMenu';
 import type { AuthUser } from './components/UserMenu';
+import Toast from './components/Toast';
+import type { ToastMessage } from './components/Toast';
 
 import { t } from './i18n/en';
 
@@ -208,6 +210,17 @@ const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastIdRef = useRef(0);
+
+  const addToast = useCallback((msg: Omit<ToastMessage, 'id'>) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { ...msg, id }]);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
   const offersRef = useRef<HTMLDivElement>(null);
 
   // Warmup Security Bridge (v5.2)
@@ -587,17 +600,33 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user?.user_id }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try { const e = await res.json(); if (e?.message) message = e.message; } catch { /* ignore */ }
+        throw new Error(message);
+      }
       const data = await res.json();
-      setOrderSuccess(data.order_ref ?? data.order_id);
+      const ref = data.order_ref ?? data.order_id ?? '—';
+      setOrderSuccess(ref);
       setCart([]);
       setIsCartOpen(false);
+      addToast({
+        variant: 'success',
+        title: `Order confirmed — ${ref}`,
+        body: 'Your print order has been received. We\'ll be in touch shortly.',
+      });
     } catch (err: any) {
-      setOrderError(err?.message || 'Checkout error.');
+      const msg = err?.message || 'Checkout error.';
+      setOrderError(msg);
+      addToast({
+        variant: 'error',
+        title: 'Order failed',
+        body: msg,
+      });
     } finally {
       setCreatingOrder(false);
     }
-  }, [user]);
+  }, [user, addToast]);
 
   const combinedOffersError = orderError || null;
 
@@ -738,6 +767,8 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 };

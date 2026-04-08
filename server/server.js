@@ -31,8 +31,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
-const authLoginUrl = 'https://preflight.printprice.pro/api/auth/login';
-const controlPlaneOrdersUrl = 'https://control.printprice.pro/api/admin/orders';
+const authLoginUrl = `${process.env.PREFLIGHT_URL || 'https://preflight.printprice.pro'}/api/auth/login`;
+const controlPlaneOrdersUrl = `${process.env.CONTROL_PLANE_URL || 'https://control.printprice.pro'}/api/admin/orders`;
 const controlPlaneApiKey = process.env.CONTROL_PLANE_API_KEY;
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
@@ -129,10 +129,16 @@ const injectLatency = (score) => {
 };
 
 // 🔴 ADAPTIVE RESPONSE HARDENER (v5.2)
-const hardenResponse = (offers, score) => {
+const offerRealNames = new Map(); // sessionId -> Map(pid -> real print_house)
+
+const hardenResponse = (offers, score, sessionId) => {
+    const nameMap = offerRealNames.get(sessionId) || new Map();
+    offerRealNames.set(sessionId, nameMap);
+
     return offers.map(offer => {
         let cost = parseFloat(offer.total_cost || offer.total_price || 0);
         const pid = crypto.createHash('sha256').update(String(offer.id || 'p')).digest('hex').substring(0, 10);
+        nameMap.set(pid, offer.print_house || offer.name || null);
 
         // Tier 0: Normal (Rounded)
         if (score <= 15) {
@@ -220,7 +226,7 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
         vault.trackEnd();
 
         // 3. ADAPTIVE RESPONSE DEGRADATION (Layer 5)
-        const hardened = hardenResponse(response.data.print_houses ?? response.data, session.abuseScore);
+        const hardened = hardenResponse(response.data.print_houses ?? response.data, session.abuseScore, sessionId);
 
         console.log(`[AUDIT] ADAPTIVE_NODE Calc session=${sessionId} AAS=${session.abuseScore} Latency=${delay} IP=${ipChain}`);
         res.json({ success: true, offers: hardened, mode: session.abuseScore > 10 ? "Degraded" : "Precise" });
@@ -270,7 +276,10 @@ app.post('/api/cart/add', (req, res) => {
     const { specs, offer } = req.body;
     if (!specs || !offer) return res.status(400).json({ error: 'specs and offer required.' });
     const cart = carts.get(sessionId) || [];
-    const item = { id: crypto.randomBytes(8).toString('hex'), specs, offer, addedAt: new Date().toISOString() };
+    const basePid = typeof offer.id === 'string' ? offer.id.replace(/-\d+$/, '') : offer.id;
+    const realName = offerRealNames.get(sessionId)?.get(basePid);
+    const resolvedOffer = realName ? { ...offer, print_house: realName } : offer;
+    const item = { id: crypto.randomBytes(8).toString('hex'), specs, offer: resolvedOffer, addedAt: new Date().toISOString() };
     cart.push(item);
     carts.set(sessionId, cart);
     res.json({ success: true, item_id: item.id, cart_count: cart.length });
@@ -305,7 +314,7 @@ app.post('/api/cart/checkout', async (req, res) => {
     const createdOrders = [];
     try {
         for (const item of cart) {
-            const order_ref = 'PPP-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+            const order_ref = 'PPP-' + Date.now().toString(36).slice(-6).toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').slice(0, 5).toUpperCase();
             const payload = {
                 order_ref,
                 user_id,
