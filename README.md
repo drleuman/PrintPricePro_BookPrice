@@ -4,6 +4,8 @@
 
 A modern, intelligent web application for calculating book printing costs with AI-powered assistance.
 
+> **Backend version**: v5.2 "Adversarial Node" — hardened Express server acting as a secure proxy to prevent API key exposure.
+
 ---
 
 ## Key Features
@@ -31,6 +33,8 @@ A modern, intelligent web application for calculating book printing costs with A
 
 ### Frontend (`App.tsx` as orchestrator)
 
+`App.tsx` owns all form state via React `useState` (no Redux/Zustand) and coordinates data flow between all panels via props.
+
 ```
 ├── App.tsx                    # Global state, cart logic, handlers
 ├── components/
@@ -39,38 +43,39 @@ A modern, intelligent web application for calculating book printing costs with A
 │   ├── PrintOffersPanel.tsx   # Quote results with cost breakdown
 │   ├── CartPanel.tsx          # Cart with checkout and order confirmation
 │   └── PdfUploadDropzone.tsx  # PDF.js-based file analysis
-├── constants.ts               # API endpoints and form enumerations
+├── constants.ts               # API endpoints, form enumerations, and AI system prompts
 ├── types.ts                   # Shared TypeScript types
 └── i18n/                      # Internationalization
 ```
 
 ### Backend (`server/server.js`)
 
-Hardened Express server. Acts as a secure proxy to keep API keys server-side.
+v5.2 "Adversarial Node" — hardened Express server acting as a secure proxy to keep API keys server-side.
 
 - **AI Chat** (`POST /api/ai/chat`) — Proxies requests to Gemini API, returns `{ reply, specs_patch }`
 - **BPE Proxy** (`POST /api/budget/calculate`) — Forwards to the Book Price Engine with Adaptive Vault anti-abuse layer
 - **Cart** (`/api/cart/*`) — In-memory session-bound cart (add, get, remove, checkout)
-- **Security** — Helmet headers, CORS, signed cookies, rate limiting, nonce replay prevention, honeypot, fail-closed bootstrap
+- **Anti-abuse** — Adaptive Vault session tracking, nonce replay prevention, rate limiting (`express-rate-limit`)
+- **Security** — Helmet headers, CORS, signed cookies, `express-validator` request validation, fail-closed pattern
 
 ### External API Flow
 
 1. User fills form or chats → `App.tsx` state updated
-2. Quote request → BPE at `https://bpe.printprice.pro/api/estimates`
-3. AI chat → `/api/ai/chat` (server proxies to Gemini) → resilience engine patches form state
-4. User adds offer to cart → `POST /api/cart/add` → CartPanel appears
+2. Quote request → `POST /api/budget/calculate` → smooth scroll to PrintOffersPanel
+3. AI chat → `POST /api/ai/chat` (server proxies to Gemini) → resilience engine patches form state
+4. User adds offer to cart → `POST /api/cart/add` → CartPanel appears with smooth scroll
 5. User confirms → `POST /api/cart/checkout` → order captured, success message shown
 
 ---
 
 ## AI Resilience Pipeline
 
-Each AI response goes through four stages before touching the UI:
+The assistant output is not trusted directly. Each AI response goes through four stages before touching the UI:
 
-1. **Heuristic extraction** — regex/pattern matching on the raw user message
-2. **Conflict guards** — explicit user instructions in conversation history override AI suggestions
-3. **Hallucination repair** — chat bubbles are rewritten to reflect actual applied specs
-4. **Self-healing offers** — if corrected params invalidate a prior quote, a new BPE fetch is triggered
+1. **Heuristic extraction** — regex/pattern matching to detect user intent from message text
+2. **Conflict guards** — explicit user instructions in conversation history override AI-suggested spec changes
+3. **Hallucination repair** — chat bubbles are rewritten to reflect actual applied specs (not what the AI claimed)
+4. **Self-healing offers** — if corrected params invalidate a prior quote, a new BPE fetch is triggered automatically
 
 ---
 
@@ -106,18 +111,21 @@ Each AI response goes through four stages before touching the UI:
 
 3. **Run development mode**:
    ```bash
-   # Terminal 1 — backend
+   # Terminal 1 — backend (hot-reload via nodemon)
    cd server && npm run dev
 
-   # Terminal 2 — frontend
+   # Terminal 2 — frontend (Vite dev server on port 3000)
    npm run dev
    ```
 
 4. **Production build**:
    ```bash
-   npm run build
+   npm run build        # Build frontend to dist/
+   npm run preview      # Preview production build locally
    cd server && npm start
    ```
+
+> **Note**: There are no test or lint scripts configured. API keys are never exposed to the client — all secrets are stored in `server/.env` only.
 
 ---
 
