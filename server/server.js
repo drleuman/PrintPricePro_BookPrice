@@ -32,6 +32,7 @@ const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
 const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
 const authLoginUrl = `${process.env.PREFLIGHT_URL || 'https://preflight.printprice.pro'}/api/auth/login`;
+const authRegisterUrl = `${process.env.PREFLIGHT_URL || 'https://preflight.printprice.pro'}/api/auth/register`;
 const controlPlaneOrdersUrl = `${process.env.CONTROL_PLANE_URL || 'https://control.printprice.pro'}/api/admin/orders`;
 const controlPlaneApiKey = process.env.CONTROL_PLANE_API_KEY;
 const apiKey = process.env.GEMINI_API_KEY;
@@ -261,6 +262,36 @@ app.post('/api/auth/login',
                 res.status(err.response.status).json(err.response.data);
             } else {
                 console.error('[AUTH_PROXY] Error:', err.message);
+                res.status(502).json({ error: 'Auth service unavailable.' });
+            }
+        }
+    }
+);
+
+// 🔐 REGISTER PROXY
+app.post('/api/auth/register',
+    rateLimit({ windowMs: 60000, max: 5, keyGenerator: (req) => req.ip }),
+    [
+        body('email').isEmail().normalizeEmail(),
+        body('password').isLength({ min: 1 }),
+        body('role').optional().isIn(['AUTHOR', 'PUBLISHER', 'PRINT_HOUSE', 'DEVELOPER']),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid registration data.' });
+
+        const { email, password, role } = req.body;
+        try {
+            const response = await axios.post(authRegisterUrl, { email, password, role }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 10000,
+            });
+            res.status(response.status).json(response.data);
+        } catch (err) {
+            if (err.response) {
+                res.status(err.response.status).json(err.response.data);
+            } else {
+                console.error('[REGISTER_PROXY] Error:', err.message);
                 res.status(502).json({ error: 'Auth service unavailable.' });
             }
         }

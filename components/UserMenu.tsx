@@ -64,7 +64,7 @@ const MenuButton: React.FC<{
 // ---------------------------------------------------------------------------
 // AuthModal
 // ---------------------------------------------------------------------------
-type AuthMode = 'LOGIN' | 'REGISTER';
+type AuthMode = 'LOGIN' | 'REGISTER' | 'MAGIC';
 
 interface AuthUser {
   email: string;
@@ -77,8 +77,10 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'AUTHOR' | 'PUBLISHER' | 'PRINT_HOUSE' | 'DEVELOPER'>('AUTHOR');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [magicSent, setMagicSent] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -88,6 +90,7 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
   useEffect(() => {
     setTimeout(() => emailRef.current?.focus(), 50);
     setError(null);
+    setMagicSent(false);
   }, [mode]);
 
   useEffect(() => {
@@ -103,14 +106,18 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
+      const endpoint = mode === 'REGISTER' ? '/api/auth/register' : '/api/auth/login';
+      const body = mode === 'REGISTER'
+        ? { email, password, role }
+        : { email, password };
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data?.message || data?.error || 'Invalid credentials. Please try again.');
+        setError(data?.message || data?.error || (mode === 'REGISTER' ? 'Registration failed. Please try again.' : 'Invalid credentials. Please try again.'));
         return;
       }
       onLoginSuccess({
@@ -146,47 +153,94 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 text-corporate-muted hover:text-corporate-accent transition-colors z-10"
+          className="absolute top-3 right-3 flex items-center justify-center w-7 h-7 text-corporate-muted hover:text-corporate-accent transition-colors z-10"
           aria-label="Close"
         >
-          <XMarkIcon className="w-4 h-4" />
+          <XMarkIcon className="w-3.5 h-3.5" />
         </button>
 
-        <div className="p-12 space-y-10">
+        <div className="px-8 pt-7 pb-0 space-y-5">
           {/* Header */}
-          <div className="flex flex-col items-center text-center space-y-6">
-            <PPOSLogo className="w-14 h-14 border border-white/10 p-3 bg-white/5" />
-            <div className="space-y-2">
-              <h2 className="text-3xl font-black tracking-tight text-corporate-text">
-                {mode === 'LOGIN' ? 'Welcome back' : 'Create account'}
+          <div className="flex items-center gap-4">
+            <PPOSLogo className="w-9 h-9 shrink-0 border border-white/10 p-2 bg-white/5" />
+            <div>
+              <h2 className="text-lg font-black tracking-tight text-corporate-text leading-tight">
+                {mode === 'LOGIN' ? 'Welcome back' : mode === 'MAGIC' ? 'Join PrintPrice OS' : 'Create account'}
               </h2>
-              <p className="text-corporate-text-secondary text-[0.85rem] font-medium leading-relaxed">
+              <p className="text-corporate-text-secondary text-[0.72rem] font-medium leading-snug mt-0.5">
                 {mode === 'LOGIN'
                   ? 'Sign in to access your print workspace'
+                  : mode === 'MAGIC'
+                  ? 'Secure access to your Print workspace'
                   : 'Join PrintPrice Pro to manage your projects'}
               </p>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-8">
+          {magicSent ? (
+            <div className="space-y-4 text-center py-4">
+              <div className="bg-corporate-accent/5 border border-corporate-accent/40 px-5 py-5 text-corporate-accent text-[0.7rem] font-bold uppercase tracking-widest flex flex-col items-center gap-2">
+                <EnvelopeIcon className="w-5 h-5" />
+                <span>Check your inbox — a magic link is on its way.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setMagicSent(false); setMode('LOGIN'); }}
+                className="text-[0.6rem] font-bold text-corporate-muted hover:text-corporate-text-secondary transition-colors uppercase tracking-[0.2em]"
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Error */}
             {error && (
-              <div className="bg-corporate-accent/5 border border-corporate-accent/40 px-5 py-4 text-corporate-accent text-[0.75rem] font-bold uppercase tracking-widest flex items-center gap-4">
-                <span className="h-2 w-2 shrink-0 bg-corporate-accent" />
+              <div className="bg-corporate-accent/5 border border-corporate-accent/40 px-4 py-3 text-corporate-accent text-[0.7rem] font-bold uppercase tracking-widest flex items-center gap-3">
+                <span className="h-1.5 w-1.5 shrink-0 bg-corporate-accent" />
                 {error}
               </div>
             )}
 
             {/* Fields */}
-            <div className="space-y-5">
+            <div className="space-y-3">
+              {/* Role selector — REGISTER only */}
+              {mode === 'REGISTER' && (
+                <div className="space-y-2">
+                  <label className="text-[0.65rem] font-black text-corporate-text uppercase tracking-[0.15em]">
+                    Select your role
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { id: 'AUTHOR', label: 'Author / Contributor' },
+                      { id: 'PUBLISHER', label: 'Editorial / Publisher' },
+                      { id: 'PRINT_HOUSE', label: 'Printer / Prepress' },
+                      { id: 'DEVELOPER', label: 'System Developer' },
+                    ] as const).map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setRole(r.id)}
+                        className={`h-[38px] text-[0.6rem] font-black uppercase tracking-widest border transition-all duration-300 ${
+                          role === r.id
+                            ? 'border-corporate-accent bg-corporate-accent/10 text-corporate-text shadow-[0_0_10px_rgba(220,0,0,0.1)]'
+                            : 'border-white/10 bg-corporate-elevated text-corporate-text-secondary hover:border-corporate-accent/50 hover:text-corporate-text'
+                        }`}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Email */}
-              <div className="space-y-2">
-                <label className="text-[0.7rem] font-black text-corporate-text uppercase tracking-[0.15em]">
+              <div className="space-y-1.5">
+                <label className="text-[0.65rem] font-black text-corporate-text uppercase tracking-[0.15em]">
                   Email
                 </label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
-                    <EnvelopeIcon className="h-4 w-4 text-corporate-muted group-focus-within:text-corporate-accent transition-colors duration-300" />
+                  <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                    <EnvelopeIcon className="h-3.5 w-3.5 text-corporate-muted group-focus-within:text-corporate-accent transition-colors duration-300" />
                   </div>
                   <input
                     ref={emailRef}
@@ -196,81 +250,83 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="user@email.com"
                     autoComplete="email"
-                    className="h-[56px] w-full bg-corporate-elevated border border-white/10 pl-14 pr-6 text-[0.9rem] text-corporate-text outline-none focus:border-corporate-accent focus:shadow-[0_0_20px_rgba(220,0,0,0.05)] transition-all duration-300 placeholder:text-corporate-muted font-medium"
+                    className="h-[46px] w-full bg-corporate-elevated border border-white/10 pl-11 pr-5 text-[0.85rem] text-corporate-text outline-none focus:border-corporate-accent focus:shadow-[0_0_20px_rgba(220,0,0,0.05)] transition-all duration-300 placeholder:text-corporate-muted font-medium"
                   />
                 </div>
               </div>
 
-              {/* Password */}
-              <div className="space-y-2">
-                <label className="text-[0.7rem] font-black text-corporate-text uppercase tracking-[0.15em]">
-                  Password
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none">
-                    <LockClosedIcon className="h-4 w-4 text-corporate-muted group-focus-within:text-corporate-accent transition-colors duration-300" />
+              {/* Password — hidden in MAGIC mode */}
+              {mode !== 'MAGIC' && (
+                <div className="space-y-1.5">
+                  <label className="text-[0.65rem] font-black text-corporate-text uppercase tracking-[0.15em]">
+                    Password
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                      <LockClosedIcon className="h-3.5 w-3.5 text-corporate-muted group-focus-within:text-corporate-accent transition-colors duration-300" />
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete={mode === 'LOGIN' ? 'current-password' : 'new-password'}
+                      className="h-[46px] w-full bg-corporate-elevated border border-white/10 pl-11 pr-5 text-[0.85rem] text-corporate-text outline-none focus:border-corporate-accent focus:shadow-[0_0_20px_rgba(220,0,0,0.05)] transition-all duration-300 placeholder:text-corporate-muted font-medium"
+                    />
                   </div>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete={mode === 'LOGIN' ? 'current-password' : 'new-password'}
-                    className="h-[56px] w-full bg-corporate-elevated border border-white/10 pl-14 pr-6 text-[0.9rem] text-corporate-text outline-none focus:border-corporate-accent focus:shadow-[0_0_20px_rgba(220,0,0,0.05)] transition-all duration-300 placeholder:text-corporate-muted font-medium"
-                  />
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Actions */}
-            <div className="space-y-6">
+            <div className="space-y-3 pt-1">
               <button
                 type="submit"
-                disabled={loading}
-                className="h-[64px] w-full bg-corporate-accent hover:bg-corporate-hover active:brightness-90 text-white text-[0.8rem] font-black uppercase tracking-[0.3em] transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-4 shadow-[0_4px_20px_rgba(220,0,0,0.2)] group"
+                disabled={loading || mode === 'MAGIC'}
+                className="h-[52px] w-full bg-corporate-accent hover:bg-corporate-hover active:brightness-90 text-white text-[0.75rem] font-black uppercase tracking-[0.3em] transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-[0_4px_20px_rgba(220,0,0,0.2)] group"
               >
                 {loading ? (
                   <span className="animate-pulse flex items-center gap-2">
-                    <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                    Verifying
+                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                    {mode === 'MAGIC' ? 'Sending' : 'Verifying'}
                   </span>
                 ) : (
                   <>
-                    <span>{mode === 'LOGIN' ? 'Sign in' : 'Create account'}</span>
-                    <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    <span>{mode === 'LOGIN' ? 'Sign in' : mode === 'MAGIC' ? 'Send link' : 'Create account'}</span>
+                    <ArrowRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
               </button>
 
-              <div className="flex flex-col items-center space-y-4 pt-1">
-                <div className="flex items-center gap-3 text-[0.7rem] font-bold uppercase tracking-widest text-corporate-muted">
-                  <span>{mode === 'LOGIN' ? 'No account?' : 'Already have one?'}</span>
+              <div className="flex flex-col items-center gap-3 pt-2">
+                <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-widest text-corporate-muted">
+                  <span>{mode === 'MAGIC' ? 'Already have an account?' : mode === 'LOGIN' ? "Don't have an account?" : 'Already have an account?'}</span>
                   <button
                     type="button"
-                    onClick={() => setMode(m => m === 'LOGIN' ? 'REGISTER' : 'LOGIN')}
+                    onClick={() => setMode(m => m === 'LOGIN' || m === 'MAGIC' ? 'REGISTER' : 'LOGIN')}
                     className="text-corporate-accent hover:underline underline-offset-4 transition-all duration-300"
                   >
-                    {mode === 'LOGIN' ? 'Create account' : 'Back to sign in'}
+                    {mode === 'MAGIC' ? 'Back to login' : mode === 'LOGIN' ? 'Create Account' : 'Back to login'}
                   </button>
                 </div>
 
-                {mode === 'LOGIN' && (
-                  <button
-                    type="button"
-                    className="text-[0.6rem] font-bold text-corporate-muted hover:text-corporate-text-secondary transition-colors uppercase tracking-[0.2em]"
-                  >
-                    Forgot my password
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setMode(m => m === 'MAGIC' ? 'LOGIN' : 'MAGIC')}
+                  className="text-[0.6rem] font-bold text-corporate-muted hover:text-corporate-text-secondary transition-colors uppercase tracking-[0.2em]"
+                >
+                  {mode === 'MAGIC' ? 'Use standard login' : 'Request magic access link'}
+                </button>
               </div>
             </div>
           </form>
+          )}
         </div>
 
         {/* Secure footer */}
-        <div className="px-12 py-5 bg-corporate-primary border-t border-[var(--border-subtle)] flex items-center justify-center gap-3">
-          <ShieldCheckIcon className="h-3.5 w-3.5 text-[#32D74B]" />
+        <div className="px-8 py-4 mt-5 bg-corporate-primary border-t border-[var(--border-subtle)] flex items-center justify-center gap-3">
+          <ShieldCheckIcon className="h-3 w-3 text-[#32D74B]" />
           <span className="text-[0.6rem] font-mono text-corporate-muted tracking-widest uppercase">
             Secure encrypted connection
           </span>
