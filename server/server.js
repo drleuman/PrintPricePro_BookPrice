@@ -339,20 +339,20 @@ ${JSON.stringify(ui_state || {})}`;
 app.post('/api/auth/login',
     rateLimit({ windowMs: 60000, max: 10 }),
     [
-        body('email').isEmail().normalizeEmail(),
+        body('email').isEmail(),
         body('password').isLength({ min: 1 }),
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ error: 'Invalid credentials format.' });
+            console.error('[AUTH_LOGIN_VALIDATION_ERROR]', errors.array());
+            return res.status(400).json({ error: 'Invalid credentials format.', details: errors.array() });
         }
 
         const { email, password } = req.body;
 
         try {
             const response = await axios.post(authLoginUrl, { email, password }, {
-                headers: buildControlPlaneHeaders(),
                 timeout: 10000,
             });
 
@@ -370,21 +370,21 @@ app.post('/api/auth/login',
 app.post('/api/auth/register',
     rateLimit({ windowMs: 60000, max: 5 }),
     [
-        body('email').isEmail().normalizeEmail(),
+        body('email').isEmail(),
         body('password').isLength({ min: 1 }),
         body('role').optional().isIn(['AUTHOR', 'PUBLISHER', 'PRINT_HOUSE', 'PRINTHOUSE', 'DEVELOPER']),
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ error: 'Invalid registration data.' });
+            console.error('[AUTH_REGISTER_VALIDATION_ERROR]', errors.array());
+            return res.status(400).json({ error: 'Invalid registration data.', details: errors.array() });
         }
 
         const { email, password, role } = req.body;
 
         try {
             const response = await axios.post(authRegisterUrl, { email, password, role }, {
-                headers: buildControlPlaneHeaders(),
                 timeout: 10000,
             });
 
