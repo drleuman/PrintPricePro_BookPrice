@@ -11,6 +11,7 @@ interface CartPanelProps {
   onCheckout: () => void;
   isLoggedIn: boolean;
   onSignInClick: () => void;
+  onGoToUpload?: () => void;
 }
 
 const CartPanel: React.FC<CartPanelProps> = ({
@@ -22,6 +23,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
   onCheckout,
   isLoggedIn,
   onSignInClick,
+  onGoToUpload,
 }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -206,7 +208,11 @@ const CartPanel: React.FC<CartPanelProps> = ({
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => { setConfirmOpen(false); onClose(); }}
+                    onClick={() => { 
+                      setConfirmOpen(false); 
+                      onClose();
+                      onGoToUpload?.();
+                    }}
                     className="flex-1 py-2 text-xs font-technical font-black tracking-monolith uppercase bg-corporate-accent text-white hover:bg-corporate-hover transition-all"
                   >
                     Go to upload

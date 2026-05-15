@@ -44,6 +44,7 @@ import type { AuthUser } from './components/UserMenu';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import ProductionFilesPanel from './components/ProductionFilesPanel';
+import CheckoutStepper from './components/CheckoutStepper';
 import {
   validateProductionFile,
   validateProductionFileUrl
@@ -261,6 +262,7 @@ const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
   const offersRef = useRef<HTMLDivElement>(null);
+  const productionFilesRef = useRef<HTMLDivElement>(null);
 
   // Warmup Security Bridge (v5.2)
   useEffect(() => {
@@ -616,6 +618,13 @@ const App: React.FC = () => {
     }));
   }, []);
 
+  const handleGoToUpload = useCallback(() => {
+    setIsCartOpen(false);
+    setTimeout(() => {
+      productionFilesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  }, []);
+
   const handleChooseOffer = useCallback(async (offer: BookPriceOffer) => {
     if (creatingOrder) return;
 
@@ -888,6 +897,13 @@ const App: React.FC = () => {
     return cart.find(i => currentOfferIds.has(i.offer.id))?.offer.id ?? null;
   }, [offers, cart]);
 
+  const currentStep = React.useMemo(() => {
+    if (orderSuccess) return 'checkout';
+    if (cart.length > 0) return 'upload';
+    if (offers) return 'offer';
+    return 'specs';
+  }, [cart, offers, orderSuccess]);
+
   const combinedOffersError = orderError || null;
 
   return (
@@ -906,6 +922,9 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
+        {/* Visual Workflow Guidance */}
+        <CheckoutStepper currentStep={currentStep} />
+
         {/* Asistente IA arriba, a ancho completo */}
         <AssistantChat
           specs={bookPricePayload}
@@ -1007,7 +1026,7 @@ const App: React.FC = () => {
 
         {/* Production Files Step (v5.3) */}
         {cart.length > 0 && (
-          <div className="mt-8 border-t border-white/5 pt-12">
+          <div ref={productionFilesRef} className="mt-8 border-t border-white/5 pt-12">
             <ProductionFilesPanel
               cartItem={cart[0]}
               filesState={productionFiles}
@@ -1029,6 +1048,7 @@ const App: React.FC = () => {
         checkingOut={creatingOrder}
         onRemove={handleRemoveFromCart}
         onCheckout={handleCheckout}
+        onGoToUpload={handleGoToUpload}
         isLoggedIn={!!user}
         onSignInClick={() => setAuthModalOpen(true)}
       />
