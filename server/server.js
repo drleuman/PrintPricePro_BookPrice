@@ -542,6 +542,8 @@ app.post('/api/cart/checkout', async (req, res) => {
                 source_ref: source_ref,
                 order_ref: order_ref,
                 user_id: process.env.PPOS_BPE_SYSTEM_USER_ID || 'bpe-system-user',
+                offer_print_house: item.offer.printer || item.offer.print_house || item.offer_print_house || 'BPE_Engine',
+                offer_price: item.pricing.total_price ?? item.offer.total_price ?? 0,
                 customer: {
                     id: targetUserId,
                     email: user?.email || 'customer@example.com',
