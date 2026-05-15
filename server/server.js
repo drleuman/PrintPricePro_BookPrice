@@ -291,22 +291,22 @@ ${JSON.stringify(ui_state || {})}`;
         const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
+        console.log(`[PPP_AI_CHAT] session=${req.signedCookies?.pp_session_id || 'anonymous'} model=${model}`);
         const response = await axios.post(geminiUrl, geminiPayload, {
             headers: { 'Content-Type': 'application/json' },
             timeout: 30000
         });
 
         const text =
-            response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            response.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+            response.data?.response ||
+            '';
 
         let parsed;
         try {
             parsed = JSON.parse(text);
         } catch {
-            parsed = {
-                reply: text || "I could not parse the assistant response.",
-                specs_patch: {}
-            };
+            parsed = { reply: text };
         }
 
         const normalized = {
