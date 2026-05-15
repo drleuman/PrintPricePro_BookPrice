@@ -353,12 +353,18 @@ app.post('/api/auth/login',
 
         try {
             const response = await axios.post(authLoginUrl, { email, password }, {
+                headers: buildControlPlaneHeaders(),
                 timeout: 10000,
             });
 
             res.status(response.status).json(response.data);
         } catch (err) {
-            console.error('[AUTH_LOGIN_PROXY_ERROR]', err.response?.data || err.message);
+            console.error('[AUTH_LOGIN_PROXY_ERROR]', {
+                url: authLoginUrl,
+                status: err.response?.status,
+                data: err.response?.data,
+                message: err.message
+            });
             res.status(err.response?.status || 502).json(
                 err.response?.data || { error: 'Auth service unavailable.' }
             );
@@ -385,12 +391,18 @@ app.post('/api/auth/register',
 
         try {
             const response = await axios.post(authRegisterUrl, { email, password, role }, {
+                headers: buildControlPlaneHeaders(),
                 timeout: 10000,
             });
 
             res.status(response.status).json(response.data);
         } catch (err) {
-            console.error('[AUTH_REGISTER_PROXY_ERROR]', err.response?.data || err.message);
+            console.error('[AUTH_REGISTER_PROXY_ERROR]', {
+                url: authRegisterUrl,
+                status: err.response?.status,
+                data: err.response?.data,
+                message: err.message
+            });
             res.status(err.response?.status || 502).json(
                 err.response?.data || { error: 'Auth service unavailable.' }
             );
