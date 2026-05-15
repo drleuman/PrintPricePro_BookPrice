@@ -73,6 +73,24 @@ const generateHmac = (data) => {
     return crypto.createHmac('sha256', SIGNING_SECRET).update(JSON.stringify(data)).digest('hex');
 };
 
+const getOrCreateSessionId = (req, res) => {
+    let sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) {
+        sessionId = crypto.randomBytes(24).toString('hex');
+        const isProd = process.env.NODE_ENV === 'production';
+        res.cookie('pp_session_id', sessionId, {
+            httpOnly: true,
+            signed: true,
+            secure: isProd,
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+        console.log(`[SESSION_CREATED] new_session=${sessionId} ip=${req.ip}`);
+    }
+    return sessionId;
+};
+
 const validateUrlAgainstSsrf = (urlString) => {
     if (!urlString) return false;
     try {
@@ -230,19 +248,7 @@ app.post('/api/security/challenge', (req, res) => {
         return res.status(400).json({ error: "Challenge payload_context required." });
     }
 
-    const sessionId =
-        req.signedCookies['pp_session_id'] ||
-        crypto.randomBytes(16).toString('hex');
-
-    if (!req.signedCookies['pp_session_id']) {
-        res.cookie('pp_session_id', sessionId, {
-            signed: true,
-            httpOnly: true,
-            sameSite: 'Lax',
-            secure: true,
-            maxAge: 24 * 60 * 60 * 1000
-        });
-    }
+    const sessionId = getOrCreateSessionId(req, res);
 
     const nonce = crypto.randomBytes(16).toString('hex');
     const timestamp = Date.now();
@@ -401,10 +407,7 @@ app.post('/api/budget/calculate', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const sessionId = req.signedCookies['pp_session_id'] || crypto.randomBytes(16).toString('hex');
-    if (!req.signedCookies['pp_session_id']) {
-        res.cookie('pp_session_id', sessionId, { signed: true, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
-    }
+    const sessionId = getOrCreateSessionId(req, res);
 
     try {
         // In v5.2 this proxies to the actual BPE marketplace endpoint
@@ -423,14 +426,12 @@ app.post('/api/budget/calculate', [
 
 // 🛒 CART API (Session-bound)
 app.get('/api/cart', (req, res) => {
-    const sessionId = req.signedCookies['pp_session_id'];
-    if (!sessionId) return res.json({ success: true, cart: [] });
+    const sessionId = getOrCreateSessionId(req, res);
     res.json({ success: true, cart: carts.get(sessionId) || [] });
 });
 
 app.post('/api/cart/add', (req, res) => {
-    const sessionId = req.signedCookies['pp_session_id'];
-    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+    const sessionId = getOrCreateSessionId(req, res);
 
     const { specs, offer, pricing, allOffers, recommendedOffer, recommendedOfferId, selectedBy, metadata } = req.body;
 
