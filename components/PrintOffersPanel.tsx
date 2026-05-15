@@ -83,6 +83,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
           const isBestPrice = index === 0;
           const isSelected = selectedOfferId === offer.id;
           const isOpen = openBreakdownId === offer.id;
+          const isRecommended = !!offer.recommended;
           const displayPrice = getDisplayPrice(offer);
           const hasFiniteDisplayPrice = Number.isFinite(displayPrice) && displayPrice < Number.MAX_SAFE_INTEGER;
 
