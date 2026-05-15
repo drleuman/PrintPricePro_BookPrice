@@ -2,103 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Basic body styling for consistent look */
+:root {
+  /* BACKGROUNDS - LIGHT (DEFAULT) */
+  --bg-primary: #f6f6f7;      /* The Canvas (Surface) */
+  --bg-secondary: #ffffff;    /* Surface Container Lowest (Recessed) */
+  --bg-elevated: #e5e5e7;     /* Surface Bright (Technical Insets) */
+  --bg-surface-glass: rgba(0, 0, 0, 0.03); /* Reactive depth */
+
+  /* ACCENTS */
+  --accent-primary: #dc0000;  /* Unified Red Signal (Primary Action) */
+  --accent-hover: #ff0000;    /* Interactive Overdrive */
+  --accent-container: rgba(220, 0, 0, 0.05); /* Status Recess */
+
+  /* TEXT - LIGHT */
+  --text-primary: #131314;    /* On-Surface High Contrast */
+  --text-secondary: #5e5e62;  /* Neutral Supporting Text */
+  --text-muted: #8d8d91;      /* Infrastructure De-emphasis */
+
+  /* BORDERS - LIGHT */
+  --border-subtle: rgba(0, 0, 0, 0.08); /* Ghost boundaries */
+  --border-active: rgba(220, 0, 0, 0.2);      /* Focus indicators */
+  
+  /* SPACING */
+  --monolith-gap: clamp(4rem, 12vw, 10rem);
+}
+
+.dark {
+  /* BACKGROUNDS - DARK */
+  --bg-primary: #131314;      /* The Canvas (Surface) */
+  --bg-secondary: #0e0e0f;    /* Surface Container Lowest (Recessed) */
+  --bg-elevated: #1e1e1f;     /* Surface Bright (Technical Insets) */
+  --bg-surface-glass: rgba(255, 255, 255, 0.03); /* Reactive depth */
+
+  /* ACCENTS */
+  --accent-primary: #dc0000;
+  --accent-hover: #ff0000;
+  --accent-container: rgba(220, 0, 0, 0.1);
+
+  /* TEXT - DARK */
+  --text-primary: #e5e2e3;    /* On-Surface High Contrast */
+  --text-secondary: #8d8d91;  /* Neutral Supporting Text */
+  --text-muted: #5e3f3a;      /* Infrastructure De-emphasis */
+
+  /* BORDERS - DARK */
+  --border-subtle: rgba(255, 255, 255, 0.08); /* Ghost boundaries */
+  --border-active: rgba(220, 0, 0, 0.3);      /* Focus indicators */
+}
+
+/* Global Reset & Dark Mode Enforcement */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Strict 0px Border Radius Law */
+* {
+  border-radius: 0 !important;
 }
 
 /* Custom styles for transitions */
 .fade-in {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.slide-in-right {
-  animation: slideInRight 0.3s ease-out forwards;
-}
-
-@keyframes slideInRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.slide-out-right {
-  animation: slideOutRight 0.3s ease-in forwards;
-}
-
-@keyframes slideOutRight {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-
-  to {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-
-.max-h-half-screen {
-  max-height: 50vh;
-  /* Adjust as needed */
-}
-
-/* Scrollbar styling */
+/* Scrollbar styling - Monolith Dark */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  /* Tailwind gray-300 */
-  border-radius: 4px;
+  background: var(--bg-elevated);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-  /* Tailwind gray-400 */
+  background: var(--accent-primary);
 }
 
-/* Slide down animation for custom dimensions */
-.animate-slideDown {
-  animation: slideDown 0.3s ease-out;
+/* Monolith Selection */
+::selection {
+  background-color: var(--accent-primary);
+  color: white;
 }
 
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
+/* Utilities */
+.bg-glass {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(20px);
+}
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.text-signal {
+  color: var(--accent-primary);
+}
+
+.border-signal {
+  border-color: var(--border-active);
 }

@@ -62,9 +62,9 @@ const PdfUploadDropzone: React.FC<PdfUploadDropzoneProps> = ({ onFileSelect, loa
 
   return (
     <div
-      className={`relative p-6 border-2 border-dashed rounded-lg text-center transition-colors duration-200
-        ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white'}
-        ${error ? 'border-red-500 bg-red-50' : ''}
+      className={`relative p-12 border-2 border-dashed transition-all duration-300 text-center group
+        ${isDragging ? 'border-corporate-accent bg-corporate-accent/5' : 'border-white/10 bg-corporate-primary'}
+        ${error ? 'border-corporate-accent/50 bg-corporate-accent/5' : ''}
       `}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -80,28 +80,29 @@ const PdfUploadDropzone: React.FC<PdfUploadDropzoneProps> = ({ onFileSelect, loa
         disabled={loading}
       />
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-700"></div>
-          <p className="mt-3 text-sm text-gray-600 font-medium">{t('processing_pdf')}</p>
+        <div className="flex flex-col items-center justify-center py-6">
+          <div className="w-8 h-8 border-2 border-corporate-accent border-b-transparent animate-spin" />
+          <p className="mt-6 text-[0.6rem] font-technical font-black tracking-monolith text-corporate-accent uppercase">{t('processing_pdf')}</p>
         </div>
       ) : fileName ? (
-        <div className="flex items-center justify-between space-x-2 text-indigo-700 font-medium">
-          <div className="flex items-center space-x-2 truncate">
-            <DocumentTextIcon className="h-6 w-6" />
+        <div className="flex items-center justify-between space-x-4 text-corporate-accent font-technical font-black uppercase tracking-monolith text-[0.7rem] bg-corporate-accent/5 p-4 border border-corporate-accent/20">
+          <div className="flex items-center space-x-3 truncate">
+            <DocumentTextIcon className="h-5 w-5" />
             <span className="truncate">{fileName}</span>
           </div>
           <button
-            onClick={handleRemoveFile}
-            className="text-red-500 hover:text-red-700 transition-colors duration-200"
+            onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
+            className="text-white hover:text-corporate-accent transition-colors duration-200"
             aria-label="Remove PDF file"
           >
-            <XCircleIcon className="h-6 w-6" />
+            <XCircleIcon className="h-5 w-5" />
           </button>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-4">
-          <ArrowUpTrayIcon className="h-10 w-10 text-gray-400" />
-          <p className="mt-3 text-sm text-gray-600 font-medium">{t('upload_pdf_instructions')}</p>
+        <div className="flex flex-col items-center justify-center py-6">
+          <ArrowUpTrayIcon className="h-10 w-10 text-corporate-accent/40 group-hover:text-corporate-accent transition-colors duration-300" />
+          <p className="mt-6 text-[0.6rem] font-technical font-black tracking-monolith text-corporate-text-secondary uppercase group-hover:text-white transition-colors duration-300">{t('upload_pdf_instructions')}</p>
+          <p className="mt-2 text-[0.5rem] font-technical text-corporate-muted uppercase tracking-widest leading-none">Accepted node: application/pdf</p>
         </div>
       )}
     </div>

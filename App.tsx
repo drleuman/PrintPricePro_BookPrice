@@ -2,6 +2,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from 'react';
 
 // PDF.js (legacy build)
@@ -14,9 +15,6 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 import {
   BOOK_PRICE_API_ENDPOINT,
-  CREATE_ORDER_ENDPOINT,
-  BOOK_SIZES_PORTRAIT,
-  BOOK_SIZES_LANDSCAPE,
 } from './constants';
 
 import {
@@ -24,12 +22,32 @@ import {
   BookPricePayload,
   BookPriceResponse,
   BookPriceOffer,
+  CartItem,
+  ProductionFileKind,
+  ProductionFileDraft,
+  ProductionFilesState,
+  ProductionFileStatus,
+  ProductionFilesWorkflowStatus,
+  ProductionFileMetadata,
 } from './types';
+
+import { normaliseApiResponse } from './lib/normaliseApiResponse';
 
 import AssistantChat from './components/AssistantChat';
 import PdfUploadDropzone from './components/PdfUploadDropzone';
 import BookPriceForm from './components/BookPriceForm';
 import PrintOffersPanel from './components/PrintOffersPanel';
+import CartPanel from './components/CartPanel';
+import Header from './components/Header';
+import { AuthModal } from './components/UserMenu';
+import type { AuthUser } from './components/UserMenu';
+import Toast from './components/Toast';
+import type { ToastMessage } from './components/Toast';
+import ProductionFilesPanel from './components/ProductionFilesPanel';
+import {
+  validateProductionFile,
+  validateProductionFileUrl
+} from './lib/productionFilesApi';
 
 import { t } from './i18n/en';
 
@@ -111,11 +129,63 @@ async function detectPageIsColor(page: any): Promise<boolean> {
   return false;
 }
 
+// Security Layer 2: Challenge Context Helper (v5.2)
+async function getPayloadContext(data: any) {
+  // Use core fields that define the pricing model to bind the token
+  const coreFields = [data.copies, data.interior_pages, data.book_size];
+  const msgUint8 = new TextEncoder().encode(JSON.stringify(coreFields));
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+const initialFileDraft = (kind: ProductionFileKind): ProductionFileDraft => ({
+  kind,
+  status: 'PENDING',
+});
+
+const toProductionFileMetadata = (
+  draft: ProductionFileDraft,
+  kind: ProductionFileKind
+): ProductionFileMetadata => ({
+  kind,
+  source_type: draft.source_type,
+  filename: draft.filename,
+  size_bytes: draft.size_bytes,
+  mime_type: draft.mime_type,
+  status: draft.status,
+  download_url: draft.download_url,
+  download_url_host: draft.download_url_host,
+  ingestion_status: draft.ingestion_status,
+  checksum: draft.checksum,
+  error: draft.error,
+});
+
 const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [payloadVersion, setPayloadVersion] = useState(0);
+
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark';
+    }
+    return false;
+  });
+
+  // Sync theme with DOM
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDark]);
 
   const [bookPricePayload, setBookPricePayload] =
     useState<InitialBookPricePayload>({
@@ -169,6 +239,45 @@ const App: React.FC = () => {
 
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastIdRef = useRef(0);
+
+  // ---- Production Files State (v5.3) ----
+  const [productionFiles, setProductionFiles] = useState<ProductionFilesState>({
+    interior_pdf: initialFileDraft('INTERIOR_PDF'),
+    cover_spine_back_pdf: initialFileDraft('COVER_SPINE_BACK_PDF')
+  });
+
+
+  const addToast = useCallback((msg: Omit<ToastMessage, 'id'>) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { ...msg, id }]);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+  const offersRef = useRef<HTMLDivElement>(null);
+
+  // Warmup Security Bridge (v5.2)
+  useEffect(() => {
+    const warmup = async () => {
+      try {
+        await fetch('/api/security/challenge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload_context: 'warmup' })
+        });
+        console.log("🛡️ Infrastructure Safeguard Active. Assistant Bridge ready.");
+      } catch (e) {
+        console.warn('Fail-closed safeguard warmup delay.', e);
+      }
+    };
+    warmup();
+  }, []);
 
   // Configurar worker de PDF.js con la URL generada por Vite (misma versión que la API)
   useEffect(() => {
@@ -243,77 +352,9 @@ const App: React.FC = () => {
     []
   );
 
-  // Normalizar respuesta del BPE -> BookPriceResponse (para UI)
-  const normaliseApiResponse = (data: any): BookPriceResponse => {
-    const rawOffers: any[] = Array.isArray(data?.print_houses)
-      ? data.print_houses
-      : Array.isArray(data?.offers)
-        ? data.offers
-        : Array.isArray(data)
-          ? data
-          : [];
-
-    const offers: BookPriceOffer[] = rawOffers.map(
-      (raw: any, index: number) => {
-        const currency: string =
-          raw.currency || raw.currency_code || 'EUR';
-
-        const totalCostRaw =
-          raw.total_cost ??
-          raw.total_price ??
-          raw.grand_total ??
-          0;
-        const total_cost =
-          typeof totalCostRaw === 'number'
-            ? totalCostRaw
-            : parseFloat(String(totalCostRaw)) || 0;
-
-        // Breakdown a partir de lines[]
-        const breakdown =
-          Array.isArray(raw.lines)
-            ? raw.lines.map((line: any) => ({
-              label: String(line.item ?? ''),
-              amount:
-                typeof line.line_total === 'number'
-                  ? line.line_total
-                  : line.line_total
-                    ? parseFloat(String(line.line_total)) || 0
-                    : 0,
-            }))
-            : Array.isArray(raw.breakdown)
-              ? raw.breakdown
-              : [];
-
-        const estimated_delivery_time: string =
-          raw.estimated_delivery_time ||
-          raw.delivery_time ||
-          raw.lead_time ||
-          raw.eta ||
-          '';
-
-        return {
-          id: String(raw.house_id ?? raw.id ?? `offer-${index}`),
-          print_house:
-            raw.print_house ||
-            raw.print_house_name ||
-            'Print house',
-          total_cost,
-          estimated_delivery_time,
-          breakdown,
-          currency,
-        };
-      }
-    );
-
-    return {
-      success: !data?.error && offers.length > 0,
-      message: data?.message || data?.error || undefined,
-      offers,
-    };
-  };
 
   // Construir payload para BPE / create-order
-  const buildBookPricePayload = (): BookPricePayload => {
+  const buildBookPricePayload = useCallback((): BookPricePayload => {
     const interiorPagesRaw = Number(bookPricePayload.interior_pages);
     const interiorPages = Number.isFinite(interiorPagesRaw)
       ? interiorPagesRaw
@@ -387,6 +428,11 @@ const App: React.FC = () => {
       extra_fixed: bookPricePayload.extra_fixed,
       extra_variable: bookPricePayload.extra_variable,
 
+      // App metadata
+      ...(bookPricePayload.total_page_count !== undefined
+        ? { total_page_count: bookPricePayload.total_page_count }
+        : {}),
+
       // Debug (optional)
       ...(bookPricePayload.debug ? { debug: 1 as const } : {}),
 
@@ -398,7 +444,7 @@ const App: React.FC = () => {
         }
         : {}),
     };
-  };
+  }, [bookPricePayload]);
 
   // Botón manual "Calculate Price"
   const handleCalculatePrice = useCallback(async () => {
@@ -416,14 +462,33 @@ const App: React.FC = () => {
 
     setLoadingOffers(true);
 
-    const payloadForApi = buildBookPricePayload();
-
     try {
+      // 1. Prepare Payload Context for Binding (v5.2)
+      const payloadBase = buildBookPricePayload();
+      const payloadCtx = await getPayloadContext(payloadBase);
+
+      // 2. Obtain Bound Server Challenge
+      const challengeRes = await fetch('/api/security/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload_context: payloadCtx })
+      });
+      if (!challengeRes.ok) throw new Error('Infrastructure safeguard triggered. Refreshing security context.');
+      const { token, nonce, timestamp } = await challengeRes.json();
+
+      // 3. Prepare Final Sealed Payload
+      const payloadForApi = {
+        ...payloadBase,
+        hp_field: (document.getElementById('hp_node') as HTMLInputElement)?.value || '',
+        security_token: token,
+        nonce,
+        timestamp
+      };
+
+      // 3. Request Final Calculation
       const response = await fetch(BOOK_PRICE_API_ENDPOINT, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payloadForApi),
       });
 
@@ -447,6 +512,7 @@ const App: React.FC = () => {
       }
 
       setOffers(normalised);
+      setTimeout(() => offersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     } catch (err: any) {
       console.error('Error calculating price:', err);
       setError(err?.message || t('api_error_message'));
@@ -454,133 +520,392 @@ const App: React.FC = () => {
     } finally {
       setLoadingOffers(false);
     }
-  }, [bookPricePayload]);
+  }, [bookPricePayload, buildBookPricePayload]);
 
-  // Elegir oferta => BPE de nuevo + create-order-from-chat
-  const handleChooseOffer = useCallback(
-    async (offer: BookPriceOffer) => {
-      try {
-        setCreatingOrder(true);
-        setOrderError(null);
+  const handleProductionFileSelect = useCallback(async (kind: ProductionFileKind, file: File) => {
+    try {
+      const { valid, error, metadata } = await validateProductionFile(file, kind);
 
-        // 1) Parametros base tal y como los usamos para el BPE
-        const baseParams = buildBookPricePayload();
-
-        // 2) Recalcular ofertas en el backend para obtener print_houses RAW
-        const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(baseParams),
+      if (!valid) {
+        addToast({
+          variant: 'error',
+          title: 'Invalid file',
+          body: error === 'INVALID_TYPE_REQUIRED_PDF' ? 'Please select a valid PDF file.' : error,
         });
-
-        if (!bpeRes.ok) {
-          let msg = `BPE HTTP ${bpeRes.status}`;
-          try {
-            const errData = await bpeRes.json();
-            if (errData?.message) msg = errData.message;
-            if (errData?.error) msg = errData.error;
-          } catch {
-            // ignore
+        setProductionFiles(prev => ({
+          ...prev,
+          [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+            ...prev[kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf'],
+            status: 'ERROR',
+            error
           }
-          throw new Error(msg);
-        }
-
-        const bpeData = await bpeRes.json();
-
-        const bpeParams =
-          bpeData &&
-            typeof bpeData === 'object' &&
-            bpeData.params &&
-            typeof bpeData.params === 'object'
-            ? bpeData.params
-            : {};
-
-        // 3) paramsPayload: mezcla de lo que tienes en la UI + lo que devuelve el BPE
-        const paramsPayload: any = {
-          ...baseParams,
-          ...bpeParams,
-        };
-
-        // Garantizar book_size siempre presente
-        if (!paramsPayload.book_size) {
-          paramsPayload.book_size =
-            bpeParams.book_size || baseParams.book_size || 'A5';
-        }
-
-        const printHouses: any[] = Array.isArray(bpeData?.print_houses)
-          ? bpeData.print_houses
-          : [];
-
-        if (!printHouses.length) {
-          throw new Error('No print houses returned by Book Price Engine.');
-        }
-
-        // 4) Buscar la casa correcta dentro de print_houses RAW
-        const selectedRaw =
-          printHouses.find(
-            (h: any) =>
-              (h.house_id &&
-                String(h.house_id) === String(offer.id)) ||
-              (h.print_house &&
-                String(h.print_house) === String(offer.print_house))
-          ) || printHouses[0];
-
-        // 5) Payload para create-order-from-chat
-        const orderPayload = {
-          ...paramsPayload, // copia plana (por si el endpoint mira a nivel raíz)
-          params: paramsPayload,
-          print_houses: printHouses,
-          selected_print_house: selectedRaw,
-        };
-
-        const res = await fetch(CREATE_ORDER_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(orderPayload),
-        });
-
-        if (!res.ok) {
-          let msg = `HTTP ${res.status}`;
-          try {
-            const errData = await res.json();
-            if (errData?.message) msg = errData.message;
-            if (errData?.error) msg = errData.error;
-          } catch {
-            // ignore
-          }
-          throw new Error(msg);
-        }
-
-        const data = await res.json();
-
-        // Redirect to WooCommerce cart instead of order page
-        // The order is created silently in the background
-        if (data?.cart_url) {
-          window.location.href = data.cart_url;
-        } else if (data?.data?.cart_url) {
-          window.location.href = data.data.cart_url;
-        } else {
-          // Fallback: redirect to cart page directly
-          // The backend should add the item to cart automatically
-          window.location.href = 'https://printprice.pro/cart/';
-        }
-      } catch (err: any) {
-        console.error('Error creating print order', err);
-        setOrderError(err?.message || 'Error creating print order.');
-      } finally {
-        setCreatingOrder(false);
+        }));
+        return;
       }
-    },
-    [bookPricePayload]
-  );
+
+      setProductionFiles(prev => ({
+        ...prev,
+        [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+          kind,
+          source_type: 'UPLOAD',
+          file,
+          filename: metadata?.filename,
+          size_bytes: metadata?.size_bytes,
+          mime_type: metadata?.mime_type,
+          status: 'SELECTED'
+        }
+      }));
+
+      addToast({
+        variant: 'success',
+        title: 'File ready',
+        body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} PDF ready for intake.`,
+      });
+    } catch (err) {
+      console.error('File validation error:', err);
+    }
+  }, [addToast]);
+
+  const handleProductionFileUrlSelect = useCallback(async (kind: ProductionFileKind, url: string) => {
+    try {
+      const { valid, error, metadata } = await validateProductionFileUrl(url, kind);
+
+      if (!valid) {
+        addToast({
+          variant: 'error',
+          title: 'Invalid link',
+          body: error === 'SECURE_HTTPS_REQUIRED' ? 'Only secure HTTPS links are allowed.' : 'Please provide a valid download URL.',
+        });
+        setProductionFiles(prev => ({
+          ...prev,
+          [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+            ...prev[kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf'],
+            status: 'ERROR',
+            error
+          }
+        }));
+        return;
+      }
+
+      setProductionFiles(prev => ({
+        ...prev,
+        [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+          kind,
+          source_type: 'DOWNLOAD_URL',
+          download_url: metadata?.download_url,
+          download_url_host: metadata?.download_url_host,
+          status: 'LINK_PROVIDED',
+          ingestion_status: 'NOT_STARTED'
+        }
+      }));
+
+      addToast({
+        variant: 'success',
+        title: 'Link ready',
+        body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} download link declared.`,
+      });
+    } catch (err) {
+      console.error('URL validation error:', err);
+    }
+  }, [addToast]);
+
+  const handleProductionFileRemove = useCallback((kind: ProductionFileKind) => {
+    setProductionFiles(prev => ({
+      ...prev,
+      [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: initialFileDraft(kind)
+    }));
+  }, []);
+
+  const handleChooseOffer = useCallback(async (offer: BookPriceOffer) => {
+    if (creatingOrder) return;
+
+    if (offer.checkout_allowed === false) {
+      const msg = 'This quote is not precise enough for checkout. Please recalculate or contact support.';
+      setOrderError(msg);
+      addToast({
+        variant: 'error',
+        title: 'Quote unavailable',
+        body: msg,
+      });
+      return;
+    }
+
+    try {
+      setCreatingOrder(true);
+      setOrderError(null);
+
+      // Clear current backend cart before adding the new selected offer
+      await Promise.all(
+        cart.map(item =>
+          fetch(`/api/cart/items/${item.id}`, {
+            method: 'DELETE',
+            credentials: 'include',
+          }).catch(() => null)
+        )
+      );
+
+      const specs = buildBookPricePayload();
+      const allOffers = offers?.offers || [];
+
+      const recommendedOffer =
+        allOffers.find(o =>
+          o.recommended ||
+          o.id === offers?.recommended_offer_id ||
+          o.offer_id === offers?.recommended_offer_id ||
+          o.offer_id === offers?.raw_recommended_offer_id
+        ) || null;
+
+      const recommendedOfferId =
+        offers?.recommended_offer_id ||
+        offers?.raw_recommended_offer_id ||
+        recommendedOffer?.offer_id ||
+        recommendedOffer?.id ||
+        null;
+
+      const pricing = {
+        total_price: Number(offer.total_price || offer.total_cost || 0),
+        total_cost: Number(offer.total_cost || offer.total_price || 0),
+        currency: offer.currency || 'EUR',
+        margin: offer.margin || 0,
+        margin_percent: offer.margin_percent || 0,
+      };
+
+      const response = await fetch('/api/cart/add', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          specs,
+          offer: {
+            ...offer,
+            selected_by_customer: true,
+          },
+          pricing,
+          allOffers,
+          recommendedOffer,
+          recommendedOfferId,
+          selectedBy: 'CUSTOMER',
+          metadata: {
+            contract: 'BPE_MARKETPLACE_NATIVE',
+            source: 'PRINTPRICE_APP',
+            bpe_endpoint: '/api/marketplace/offers',
+            payment_status: 'PENDING',
+          },
+        }),
+      });
+
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch {
+        // ignore non-json response
+      }
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Failed to add to cart');
+      }
+
+      setCart([{
+        id: data.item_id,
+        specs,
+        offer: {
+          ...offer,
+          selected_by_customer: true,
+        },
+        pricing,
+        allOffers,
+        recommendedOffer,
+        recommendedOfferId,
+        selectedBy: 'CUSTOMER',
+        addedAt: new Date().toISOString(),
+        metadata: {
+          contract: 'BPE_MARKETPLACE_NATIVE',
+          source: 'PRINTPRICE_APP',
+          bpe_endpoint: '/api/marketplace/offers',
+          payment_status: 'PENDING',
+        },
+      }]);
+
+      setProductionFiles({
+        interior_pdf: initialFileDraft('INTERIOR_PDF'),
+        cover_spine_back_pdf: initialFileDraft('COVER_SPINE_BACK_PDF'),
+      });
+
+      setIsCartOpen(true);
+    } catch (err: any) {
+      console.error('Error adding to cart:', err);
+      addToast({
+        variant: 'error',
+        title: 'Cart Error',
+        body: err?.message || 'Failed to add offer to cart.',
+      });
+    } finally {
+      setCreatingOrder(false);
+    }
+  }, [offers, cart, addToast, creatingOrder, buildBookPricePayload]);
+
+  const areProductionFilesReady = useCallback(() => {
+    const readyStatuses: ProductionFileStatus[] = [
+      'SELECTED', 'UPLOADED', 'VALIDATED',
+      'LINK_PROVIDED', 'LINK_PENDING_FETCH'
+    ];
+
+    return (
+      readyStatuses.includes(productionFiles.interior_pdf.status) &&
+      readyStatuses.includes(productionFiles.cover_spine_back_pdf.status)
+    );
+  }, [productionFiles]);
+
+  const buildProductionFilesMetadata = useCallback(() => {
+    const filesReady = areProductionFilesReady();
+    const interior = productionFiles.interior_pdf;
+    const cover = productionFiles.cover_spine_back_pdf;
+
+    let workflowStatus: ProductionFilesWorkflowStatus = 'FILES_PENDING';
+    if (filesReady) {
+      const hasDownloadUrl =
+        interior.source_type === 'DOWNLOAD_URL' ||
+        cover.source_type === 'DOWNLOAD_URL';
+
+      const hasUpload =
+        interior.source_type === 'UPLOAD' ||
+        cover.source_type === 'UPLOAD';
+
+      if (interior.status === 'VALIDATED' && cover.status === 'VALIDATED') {
+        workflowStatus = 'FILES_VALIDATED';
+      } else if (hasDownloadUrl && hasUpload) {
+        workflowStatus = 'FILES_MIXED_DECLARED';
+      } else if (hasDownloadUrl) {
+        workflowStatus = 'FILES_FETCH_REQUIRED';
+      } else {
+        workflowStatus = 'FILES_SELECTED';
+      }
+    }
+
+    return {
+      required: true as const,
+      status: workflowStatus,
+      required_files: ['INTERIOR_PDF', 'COVER_SPINE_BACK_PDF'] as ProductionFileKind[],
+      interior_pdf: toProductionFileMetadata(interior, 'INTERIOR_PDF'),
+      cover_spine_back_pdf: toProductionFileMetadata(cover, 'COVER_SPINE_BACK_PDF'),
+    };
+  }, [productionFiles, areProductionFilesReady]);
+
+  const handleCheckout = useCallback(async () => {
+    try {
+      if (!areProductionFilesReady()) {
+        const msg = 'Production files are required before creating the order request.';
+        setOrderError(msg);
+        addToast({
+          variant: 'error',
+          title: 'Production files required',
+          body: msg,
+        });
+        return;
+      }
+
+      if (!user) {
+        setAuthModalOpen(true);
+        return;
+      }
+      setCreatingOrder(true);
+      setOrderError(null);
+      const res = await fetch('/api/cart/checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user,
+          metadata: {
+            production_files: buildProductionFilesMetadata(),
+            invoice_payment: {
+              invoice_status: 'PENDING_FILES',
+              payment_status: 'PENDING',
+            },
+          },
+        }),
+      });
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const e = await res.json();
+          message = e?.error || e?.message || message;
+        } catch {
+          // ignore
+        }
+        throw new Error(message);
+      }
+      const data = await res.json();
+      const ref = data.order_ref || data.order_id || '—';
+      setOrderSuccess(ref);
+      setCart([]);
+      setIsCartOpen(false);
+      setProductionFiles({
+        interior_pdf: initialFileDraft('INTERIOR_PDF'),
+        cover_spine_back_pdf: initialFileDraft('COVER_SPINE_BACK_PDF'),
+      });
+
+      addToast({
+        variant: 'success',
+        title: `Order confirmed — ${ref}`,
+        body: 'Order request created. Production assets must be uploaded/fetched, ingested and validated before invoice/payment.',
+      });
+    } catch (err: any) {
+      const msg = err?.message || 'Checkout error.';
+      setOrderError(msg);
+      addToast({
+        variant: 'error',
+        title: 'Order failed',
+        body: msg,
+      });
+    } finally {
+      setCreatingOrder(false);
+    }
+  }, [user, addToast, areProductionFilesReady, buildProductionFilesMetadata]);
+
+  const handleRemoveFromCart = useCallback(async (itemId: string) => {
+    try {
+      await fetch(`/api/cart/items/${itemId}`, { method: 'DELETE', credentials: 'include' });
+      setCart(prev => {
+        const next = prev.filter(i => i.id !== itemId);
+
+        if (next.length === 0) {
+          setProductionFiles({
+            interior_pdf: initialFileDraft('INTERIOR_PDF'),
+            cover_spine_back_pdf: initialFileDraft('COVER_SPINE_BACK_PDF'),
+          });
+        }
+
+        return next;
+      });
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const selectedOfferId = React.useMemo(() => {
+    const currentOfferIds = new Set(offers?.offers?.map(o => o.id) ?? []);
+    return cart.find(i => currentOfferIds.has(i.offer.id))?.offer.id ?? null;
+  }, [offers, cart]);
 
   const combinedOffersError = orderError || null;
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      <main className="flex-1 container mx-auto px-4 py-6 sm:py-8">
+    <div className="flex flex-col min-h-screen bg-corporate-primary selection:bg-corporate-accent selection:text-white">
+      {/* Honeypot Node - Anti-Bot */}
+      <input type="text" id="hp_node" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+
+      <Header
+        cartCount={cart.length}
+        onCartClick={() => setIsCartOpen(prev => !prev)}
+        isDark={isDark}
+        onThemeToggle={() => setIsDark(prev => !prev)}
+        user={user}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onLogout={() => setUser(null)}
+      />
+
+      <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
         {/* Asistente IA arriba, a ancho completo */}
         <AssistantChat
           specs={bookPricePayload}
@@ -597,13 +922,14 @@ const App: React.FC = () => {
           }}
           onOffersUpdate={(newOffers) => setOffers(newOffers)}
           onChooseOffer={handleChooseOffer}
+          selectedOfferId={selectedOfferId}
         />
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
           {/* Left: PDF + form */}
-          <div className="space-y-4">
-            <div className="bg-white shadow-md rounded-lg p-4 sm:p-6">
-              <h2 className="text-sm font-semibold text-gray-800 mb-2">
+          <div className="space-y-6">
+            <div className="bg-corporate-secondary p-6 md:p-8 border-l border-white/5 transition-all hover:bg-corporate-primary/50">
+              <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-6 uppercase">
                 {t('upload_pdf_instructions')}
               </h2>
               <PdfUploadDropzone
@@ -613,10 +939,10 @@ const App: React.FC = () => {
                 error={error}
               />
               {pageCount > 0 && (
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-4 text-[0.6rem] font-technical tracking-wider text-corporate-text-secondary uppercase">
                   Detected{' '}
-                  <span className="font-semibold">{pageCount}</span>{' '}
-                  pages in the PDF.
+                  <span className="text-corporate-accent font-black">{pageCount}</span>{' '}
+                  pages in the source_node.
                 </p>
               )}
             </div>
@@ -633,28 +959,91 @@ const App: React.FC = () => {
           </div>
 
           {/* Right: Offers */}
-          <div className="flex flex-col h-full">
-            <PrintOffersPanel
-              offers={offers}
-              loading={loadingOffers || creatingOrder}
-              error={combinedOffersError}
-              onChooseOffer={handleChooseOffer}
-            />
+          <div className="flex flex-col gap-6">
+            <div ref={offersRef}>
+              <PrintOffersPanel
+                offers={offers}
+                loading={loadingOffers}
+                error={combinedOffersError}
+                onChooseOffer={handleChooseOffer}
+                selectedOfferId={selectedOfferId}
+              />
+            </div>
+
+            {orderSuccess && (
+              <div className="bg-corporate-secondary border border-corporate-accent/30 p-8 flex items-start gap-6">
+                <div className="w-2 h-2 mt-1 bg-corporate-accent shrink-0" />
+                <div>
+                  <p className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent uppercase mb-2">
+                    Order confirmed — {orderSuccess}
+                  </p>
+                  <p className="text-sm text-corporate-text-secondary">
+                    Order request created. Production assets are recorded. Payment remains pending until ingestion, validation and invoice generation.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOrderSuccess(null)}
+                    className="mt-4 text-[10px] font-technical font-black tracking-monolith text-corporate-muted hover:text-corporate-accent uppercase transition-colors"
+                  >
+                    [×] Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             {!pdfFile &&
               !bookPricePayload.total_page_count &&
               !loadingPdf &&
               !loadingOffers &&
               !offers && (
-                <div className="mt-4 flex-1 flex items-center justify-center">
-                  <div className="bg-white shadow-lg rounded-lg p-8 text-center text-gray-500 text-sm">
+                <div className="flex-1 flex items-center justify-center border border-white/5 bg-corporate-secondary p-12">
+                  <div className="text-center text-corporate-muted font-technical text-xs tracking-widest uppercase">
                     {t('enter_specs_or_upload_pdf')}
                   </div>
                 </div>
               )}
           </div>
         </section>
+
+        {/* Production Files Step (v5.3) */}
+        {cart.length > 0 && (
+          <div className="mt-8 border-t border-white/5 pt-12">
+            <ProductionFilesPanel
+              cartItem={cart[0]}
+              filesState={productionFiles}
+              onFileSelect={handleProductionFileSelect}
+              onUrlSelect={handleProductionFileUrlSelect}
+              onFileRemove={handleProductionFileRemove}
+              onContinue={handleCheckout}
+              disabled={creatingOrder}
+            />
+          </div>
+        )}
       </main>
+
+      {/* Cart slide-over */}
+      <CartPanel
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        checkingOut={creatingOrder}
+        onRemove={handleRemoveFromCart}
+        onCheckout={handleCheckout}
+        isLoggedIn={!!user}
+        onSignInClick={() => setAuthModalOpen(true)}
+      />
+
+      {authModalOpen && (
+        <AuthModal
+          onClose={() => setAuthModalOpen(false)}
+          onLoginSuccess={(loggedInUser) => {
+            setUser(loggedInUser);
+            setAuthModalOpen(false);
+          }}
+        />
+      )}
+
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 };

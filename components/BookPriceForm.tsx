@@ -163,25 +163,28 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   };
 
   return (
-    <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 border border-gray-100">
-      <h2 className="text-xl font-bold text-gray-900 mb-8 flex items-center gap-3">
-        <WrenchIcon className="w-6 h-6 text-red-600" />
-        Book specifications
+    <div className="bg-corporate-secondary p-8 md:p-12 border border-white/5 relative overflow-hidden">
+      <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[8rem] font-black pointer-events-none uppercase">
+        SPEC
+      </div>
+      <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
+        <WrenchIcon className="w-5 h-5" />
+        {t('book_specifications_label') || 'Book specifications'}
       </h2>
 
-      <div className="flex flex-col gap-10 text-xs sm:text-sm">
+      <div className="flex flex-col gap-16 text-xs sm:text-sm">
         {/* Section: General */}
         <div className="space-y-6">
-          <div className="flex items-center gap-4">
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+          <div className="flex items-center gap-6">
+            <h3 className="text-[10px] font-technical font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
               {t('section_general')}
             </h3>
-            <div className="h-px w-full bg-gray-100" />
+            <div className="h-[1px] w-full bg-white/5" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <UserGroupIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <UserGroupIcon className="w-4 h-4 text-corporate-accent" />
                 {t('copies_label')}
               </label>
               <input
@@ -190,23 +193,23 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 min={1}
                 value={payload.copies}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted"
               />
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('copies_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <GlobeEuropeAfricaIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <GlobeEuropeAfricaIcon className="w-4 h-4 text-corporate-accent" />
                 {t('delivery_country_label')}
               </label>
               <select
                 name="delivery_country"
                 value={payload.delivery_country}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {DELIVERY_COUNTRIES.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -214,21 +217,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('delivery_country_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <Square3Stack3DIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <Square3Stack3DIcon className="w-4 h-4 text-corporate-accent" />
                 {t('book_size_label')}
               </label>
               <select
                 name="book_size"
                 value={payload.book_size}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {currentBookSizes.map((size) => (
                   <option key={size} value={size}>
@@ -236,7 +239,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('book_size_help')}
               </p>
             </div>
@@ -244,14 +247,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
 
           {/* Custom Dimensions Section */}
           {payload.book_size === 'Custom' && (
-            <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-200 rounded-2xl p-6 shadow-inner mt-6 animate-slideDown">
-              <span className="text-xs font-bold text-blue-600 uppercase tracking-wider flex items-center gap-2 mb-4">
+            <div className="bg-corporate-primary/30 border border-corporate-accent/20 p-10 mt-10 animate-slideDown">
+              <span className="text-[10px] font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-3 mb-6">
                 <ArrowsPointingOutIcon className="w-4 h-4" />
-                📏 Custom Dimensions
+                Custom Dimensions
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="flex flex-col">
-                  <label className="font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
                     Width
                   </label>
                   <div className="relative">
@@ -264,17 +267,16 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                       placeholder="210"
                       value={payload.custom_width || ''}
                       onChange={handleChange}
-                      className={`block w-full py-3 pl-5 pr-12 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white ${customDimensionError ? 'border-red-500 ring-1 ring-red-200' : ''
-                        }`}
+                      className={`block w-full py-3 px-5 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted/40 ${customDimensionError ? 'border-corporate-accent' : 'border-white/10'}`}
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-semibold pointer-events-none">
-                      mm
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-technical font-black text-corporate-muted uppercase pointer-events-none">
+                      MM
                     </span>
                   </div>
                 </div>
 
                 <div className="flex flex-col">
-                  <label className="font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
+                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
                     Height
                   </label>
                   <div className="relative">
@@ -287,22 +289,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                       placeholder="297"
                       value={payload.custom_height || ''}
                       onChange={handleChange}
-                      className={`block w-full py-3 pl-5 pr-12 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white ${customDimensionError ? 'border-red-500 ring-1 ring-red-200' : ''
-                        }`}
+                      className={`block w-full py-3 px-5 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 placeholder:text-corporate-muted/40 ${customDimensionError ? 'border-corporate-accent' : 'border-white/10'}`}
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-semibold pointer-events-none">
-                      mm
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-technical font-black text-corporate-muted uppercase pointer-events-none">
+                      MM
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 bg-blue-50/50 rounded-lg p-3 border border-blue-100">
-                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1">
-                  <span>💡</span>
-                  <span>{payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Print Ranges</span>
+              <div className="mt-6 bg-corporate-accent/5 p-4 border border-corporate-accent/10">
+                <p className="text-[9px] font-technical font-bold text-corporate-accent uppercase tracking-monolith mb-2 flex items-center gap-2">
+                  <SparklesIcon className="w-3 h-3" />
+                  <span>{payload.orientation === 'portrait' ? 'Portrait' : 'Landscape'} Print Authority</span>
                 </p>
-                <p className="text-[11px] text-gray-600 leading-relaxed font-mono">
+                <p className="text-[10px] text-corporate-text-secondary leading-relaxed font-technical uppercase tracking-wider opacity-70">
                   {DIMENSION_HINTS[payload.orientation]}
                 </p>
               </div>
@@ -315,10 +316,10 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <DocumentTextIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
                 {t('interior_pages_label')}
               </label>
               <div className="relative">
@@ -328,7 +329,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   min={0}
                   value={payload.interior_pages}
                   onChange={handleChange}
-                  className={`block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50 ${hasPdf ? 'border-green-300 ring-1 ring-green-100' : ''}`}
+                  className={`block w-full py-4 px-6 bg-corporate-primary border text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 ${hasPdf ? 'border-corporate-accent/50' : 'border-white/10'}`}
                 />
                 {hasPdf && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -336,21 +337,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </div>
                 )}
               </div>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('interior_pages_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <BookOpenIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <BookOpenIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_pages_label')}
               </label>
               <select
                 name="cover_pages"
                 value={payload.cover_pages}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {COVER_PAGES_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -358,21 +359,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('cover_pages_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <ArrowsPointingOutIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ArrowsPointingOutIcon className="w-4 h-4 text-corporate-accent" />
                 {t('orientation_label')}
               </label>
               <select
                 name="orientation"
                 value={payload.orientation}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {ORIENTATIONS.map((o) => (
                   <option key={o} value={o}>
@@ -380,7 +381,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('orientation_help')}
               </p>
             </div>
@@ -395,17 +396,17 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <PaintBrushIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                 {t('interior_print_label')}
               </label>
               <select
                 name="interior_print"
                 value={payload.interior_print}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {INTERIOR_PRINT_OPTIONS.map((m) => (
                   <option key={m} value={m}>
@@ -413,21 +414,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('interior_print_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <CogIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <CogIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_type_interior_label')}
               </label>
               <select
                 name="paper_type_interior"
                 value={payload.paper_type_interior}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {PAPER_TYPE_INTERIOR.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -435,21 +436,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('paper_type_interior_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <ScaleIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_weight_interior_label')}
               </label>
               <select
                 name="paper_weight_interior"
                 value={payload.paper_weight_interior}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {INTERIOR_GSM_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -457,21 +458,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('paper_weight_interior_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <SwatchIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SwatchIcon className="w-4 h-4 text-corporate-accent" />
                 {t('pms_interior_label')}
               </label>
               <select
                 name="pms_interior"
                 value={payload.pms_interior}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -479,7 +480,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('pms_interior_help')}
               </p>
             </div>
@@ -494,17 +495,17 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <PaintBrushIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_print_label')}
               </label>
               <select
                 name="cover_print"
                 value={payload.cover_print}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {COVER_PRINT_OPTIONS.map((m) => (
                   <option key={m} value={m}>
@@ -512,21 +513,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('cover_print_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <BeakerIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <BeakerIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_type_cover_label')}
               </label>
               <select
                 name="paper_type_cover"
                 value={payload.paper_type_cover}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {PAPER_TYPE_COVER.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -534,21 +535,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('paper_type_cover_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <ScaleIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_weight_cover_label')}
               </label>
               <select
                 name="paper_weight_cover"
                 value={payload.paper_weight_cover}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {COVER_GSM_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -556,21 +557,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('paper_weight_cover_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <SwatchIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SwatchIcon className="w-4 h-4 text-corporate-accent" />
                 {t('pms_cover_label')}
               </label>
               <select
                 name="pms_cover"
                 value={payload.pms_cover}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {PMS_OPTIONS.map((v) => (
                   <option key={v} value={v}>
@@ -578,22 +579,22 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('pms_cover_help')}
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <AdjustmentsHorizontalIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <AdjustmentsHorizontalIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_print_rev_label')}
               </label>
               <select
                 name="cover_print_rev"
                 value={payload.cover_print_rev}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {[0, 1, 2, 3, 4, 5, 6].map((v) => (
                   <option key={v} value={v}>
@@ -601,7 +602,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('cover_print_rev_help')}
               </p>
             </div>
@@ -616,17 +617,17 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <TrophyIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <TrophyIcon className="w-4 h-4 text-corporate-accent" />
                 {t('binding_method_label')}
               </label>
               <select
                 name="binding_method"
                 value={payload.binding_method}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {BINDING_METHODS.map((b) => (
                   <option key={b.value} value={b.value}>
@@ -634,21 +635,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('binding_method_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <SparklesIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SparklesIcon className="w-4 h-4 text-corporate-accent" />
                 {t('finishing_options_label')}
               </label>
               <select
                 name="finishing_options"
                 value={payload.finishing_options}
                 onChange={handleChange}
-                className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-gray-50/50"
+                className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
               >
                 {FINISHING_OPTIONS.map((f) => (
                   <option key={f.value} value={f.value}>
@@ -656,30 +657,30 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('finishing_options_help')}
               </p>
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                <SunIcon className="w-5 h-5 text-red-600" />
+              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <SunIcon className="w-4 h-4 text-corporate-accent" />
                 {t('uv_varnish_label')}
               </label>
-              <div className="flex items-center gap-3 h-11">
+              <div className="flex items-center gap-4 py-4 px-6 bg-corporate-primary border border-white/10 h-[58px]">
                 <input
                   id="uv_varnish"
                   type="checkbox"
                   name="uv_varnish"
                   checked={payload.uv_varnish}
                   onChange={handleChange}
-                  className="h-6 w-6 text-red-600 border-gray-200 rounded-lg focus:ring-red-500 transition-all duration-200"
+                  className="h-5 w-5 bg-corporate-primary border border-white/20 text-corporate-accent focus:ring-0 rounded-none cursor-pointer"
                 />
-                <label htmlFor="uv_varnish" className="text-sm font-semibold text-gray-700">
-                  {payload.uv_varnish ? 'Apply Varnish' : 'No Varnish'}
+                <label htmlFor="uv_varnish" className="text-[10px] font-technical font-black text-white uppercase tracking-monolith cursor-pointer">
+                  {payload.uv_varnish ? 'SYSTEM_ACTIVE' : 'SYSTEM_INACTIVE'}
                 </label>
               </div>
-              <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+              <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                 {t('uv_varnish_help')}
               </p>
             </div>
@@ -688,22 +689,25 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
 
         {/* Hardcover options (conditional) */}
         {isHardcover && (
-          <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-inner">
-            <h3 className="text-xs font-bold text-gray-500 mb-6 uppercase tracking-widest flex items-center gap-3">
-              <WrenchIcon className="w-5 h-5" />
+          <div className="bg-corporate-primary/30 border border-white/5 p-8 mt-10 relative overflow-hidden">
+            <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[4rem] font-black pointer-events-none uppercase">
+              PREM
+            </div>
+            <h3 className="text-[10px] font-technical font-black text-corporate-accent mb-8 uppercase tracking-monolith flex items-center gap-4 relative z-10">
+              <WrenchIcon className="w-4 h-4" />
               Hardcover Premium Options
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10 relative z-10">
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <DocumentTextIcon className="w-5 h-5 text-red-600" />
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
                   {t('endpapers_label')}
                 </label>
                 <select
                   name="endpapers"
                   value={payload.endpapers}
                   onChange={handleChange}
-                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
                 >
                   {ENDPAPERS_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -711,14 +715,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                   {t('endpapers_help')}
                 </p>
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <PaintBrushIcon className="w-5 h-5 text-red-600" />
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                   {t('endpapers_print_label')}
                 </label>
                 <select
@@ -726,7 +730,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                   value={payload.endpapers_print}
                   onChange={handleChange}
                   disabled={payload.endpapers === 'none'}
-                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm disabled:opacity-50 transition-all duration-200 bg-white"
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300 disabled:opacity-30"
                 >
                   {ENDPAPERS_PRINT_OPTIONS.map((e) => (
                     <option key={e.value} value={e.value}>
@@ -734,21 +738,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                   {t('endpapers_print_help')}
                 </p>
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <CogIcon className="w-5 h-5 text-red-600" />
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <CogIcon className="w-4 h-4 text-corporate-accent" />
                   {t('paper_type_endpaper_label')}
                 </label>
                 <select
                   name="paper_type_endpaper"
                   value={payload.paper_type_endpaper}
                   onChange={handleChange}
-                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
                 >
                   {PAPER_TYPE_ENDPAPER.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -756,21 +760,21 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                   {t('paper_type_endpaper_help')}
                 </p>
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-bold text-gray-700 mb-2 uppercase tracking-wider text-[10px]">
-                  <ScaleIcon className="w-5 h-5 text-red-600" />
+                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                  <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                   {t('paper_weight_endpapers_label')}
                 </label>
                 <select
                   name="paper_weight_endpapers"
                   value={payload.paper_weight_endpapers}
                   onChange={handleChange}
-                  className="block w-full py-3 px-5 rounded-xl border-gray-200 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm transition-all duration-200 bg-white"
+                  className="block w-full py-4 px-6 bg-corporate-primary border border-white/10 text-corporate-text text-sm focus:border-corporate-accent focus:ring-1 focus:ring-corporate-accent transition-all duration-300"
                 >
                   {ENDPAPERS_GSM_OPTIONS.map((n) => (
                     <option key={n} value={n}>
@@ -778,7 +782,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-[11px] text-gray-400 italic leading-tight">
+                <p className="mt-3 text-[11px] text-gray-400 italic leading-tight">
                   {t('paper_weight_endpapers_help')}
                 </p>
               </div>
@@ -794,8 +798,9 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
           type="button"
           onClick={handleCalculatePrice}
           disabled={loading}
-          className="inline-flex items-center rounded-xl bg-red-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:bg-red-700 focus:ring-4 focus:ring-red-100 disabled:opacity-50 transition-all duration-200 transform hover:-translate-y-0.5"
+          className="inline-flex items-center bg-corporate-accent px-12 py-5 text-[0.7rem] font-technical font-black text-white uppercase tracking-monolith transition-all duration-300 hover:bg-corporate-hover hover:shadow-[0_10px_30px_rgba(220,0,0,0.3)] disabled:opacity-50 relative group overflow-hidden"
         >
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
           {loading ? (
             <>
               <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

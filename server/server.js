@@ -1,578 +1,461 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 require('dotenv').config();
 const express = require('express');
-const fs = require('fs');
 const axios = require('axios');
-const https = require('https');
-const path = require('path');
-const WebSocket = require('ws');
-const { URLSearchParams, URL } = require('url');
-const rateLimit = require('express-rate-limit');
-const helmet = require('helmet');
-const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const cors = require('cors');
+const crypto = require('crypto');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 
 const app = express();
-const port = process.env.PORT || 3000;
-const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
-const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
-// Support either API key env-var variant
-const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-const sessionSecret = process.env.SESSION_SECRET || 'pp-secure-session-fallback-secret-2025';
+const PORT = process.env.PORT || 3001;
 
-// 0. Enterprise In-Memory Session Store (Simulated for single-server prod)
-const sessionStore = new Map();
-const SESSION_MAX_REQUESTS = 50; // Max prompts per session per 24h
-
-// Cleanup store periodically to prevent memory leaks
-setInterval(() => {
-    const now = Date.now();
-    for (const [id, data] of sessionStore.entries()) {
-        if (now - data.lastSeen > 24 * 60 * 60 * 1000) {
-            sessionStore.delete(id);
-        }
-    }
-}, 60 * 60 * 1000);
-
-const staticPath = path.join(__dirname, '..', 'dist');
-const publicPath = path.join(__dirname, 'public');
-
-
-if (!apiKey) {
-    // Only log an error, don't exit. The server will serve apps without proxy functionality
-    console.error("Warning: GEMINI_API_KEY or API_KEY environment variable is not set! Proxy functionality will be disabled.");
+// SECRETS
+if (!process.env.SESSION_SECRET || !process.env.SIGNING_SECRET) {
+    console.error('[FATAL] SESSION_SECRET and SIGNING_SECRET are required.');
+    process.exit(1);
 }
-else {
-    console.log("API KEY FOUND (proxy will use this)")
-}
+const SESSION_SECRET = process.env.SESSION_SECRET;
+const SIGNING_SECRET = process.env.SIGNING_SECRET;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-app.use(cookieParser(sessionSecret));
+// CONTROL PLANE / BPE CONFIG
+const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://localhost:4000";
+const CONTROL_PLANE_API_KEY = process.env.CONTROL_PLANE_API_KEY || "ppp_secret_api_key_v1";
 
-// 1. Set Security Headers
-app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-eval needed for some development modes/lib behavior
-            connectSrc: ["'self'", "https://generativelanguage.googleapis.com", "https://printprice.pro", "wss://generativelanguage.googleapis.com"],
-            imgSrc: ["'self'", "data:", "https://printprice.pro"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            frameAncestors: ["'none'"], // Prevent clickjacking
-        },
-    },
-    crossOriginEmbedderPolicy: false,
-}));
-
-// 2. Global Request Limits (Internal & External)
-// Strict default limits (Excluding proxy to allow larger JSON uploads)
-app.use((req, res, next) => {
-    if (req.path.startsWith('/api-proxy')) return next();
-    express.json({ limit: '100kb' })(req, res, next);
-});
-app.use((req, res, next) => {
-    if (req.path.startsWith('/api-proxy')) return next();
-    express.urlencoded({ extended: true, limit: '100kb' })(req, res, next);
+const buildControlPlaneHeaders = () => ({
+    "Authorization": `Bearer ${CONTROL_PLANE_API_KEY}`,
+    "Content-Type": "application/json",
+    "x-source-app": "PrintPricePro_BookPrice"
 });
 
-// 3. Strict CORS with Allowlist
-const allowedOrigins = new Set(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://printprice.pro', 'https://app.printprice.pro', 'https://budget.printprice.pro']);
+// ADAPTIVE VAULT (In-memory for v5.2 hardening)
+const carts = new Map();
+const sessionVault = new Map();
+
+// SECURITY MIDDLEWARE
+app.use(helmet());
+app.use(cookieParser(SESSION_SECRET));
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl) or allowed origins
-        if (!origin || allowedOrigins.has(origin)) {
-            callback(null, true);
-        } else {
-            console.warn(`CORS blocked request from origin: ${origin}`);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-App-Proxy-Key'],
-    credentials: true // Required for signed cookies
+    origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:3001"],
+    credentials: true
 }));
 
-// Set Vary: Origin to prevent cache poisoning
-app.use((req, res, next) => {
-    res.setHeader('Vary', 'Origin');
-    next();
+app.use(express.json({ limit: '1mb' })); // v5.3: Increased limit for rich payloads
+
+// Rate limiting
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: "Too many requests from this IP, please try again later." }
 });
+app.use('/api/', apiLimiter);
 
-// Rate limiter for the proxy
-const proxyLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // Set ratelimit window at 15min (in ms)
-    max: 100, // Limit each IP to 100 requests per window
-    message: 'Too many requests from this IP, please try again after 15 minutes',
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // no `X-RateLimit-*` headers
-    handler: (req, res, next, options) => {
-        console.warn(`Rate limit exceeded for IP: ${req.ip}. Path: ${req.path}`);
-        res.status(options.statusCode).send(options.message);
-    }
-});
-
-// Apply the rate limiter to the /api-proxy route before the main proxy logic
-app.use('/api-proxy', proxyLimiter);
-
-// 4. Proxy Authentication Middleware (Option 1: Signed Cookie)
-const proxyAuth = (req, res, next) => {
-    if (req.method === 'OPTIONS') return next();
-
-    // 1. Check for signed session cookie
-    const sessionToken = req.signedCookies['pp_session'];
-    if (sessionToken === 'active') {
-        return next();
-    }
-
-    // 2. Auto-initialize session for legitimate UI origins
-    // This handles cases where Apache/Nginx serves the HTML directly
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.has(origin)) {
-        console.log(`Auto-initializing session for origin: ${origin}`);
-        return next();
-    }
-
-    // 3. Fallback to header key
-    const proxyKey = req.headers['x-app-proxy-key'];
-    const expectedKey = process.env.INTERNAL_PROXY_KEY || 'dev-fallback-secret-key';
-
-    if (proxyKey && proxyKey === expectedKey) {
-        return next();
-    }
-
-    console.warn(`Unauthorized proxy access attempt from IP: ${req.ip} (Origin: ${origin || 'none'})`);
-    return res.status(401).json({ error: 'Unauthorized: Session or Origin validation failed' });
+// 🔴 UTILS: ADAPTIVE HELPERS
+const generateHmac = (data) => {
+    return crypto.createHmac('sha256', SIGNING_SECRET).update(JSON.stringify(data)).digest('hex');
 };
 
-app.use('/api-proxy', proxyAuth);
-
-// 5. Enterprise Business Logic Validation (BPE)
-const validateBPE = (req, res, next) => {
+const validateUrlAgainstSsrf = (urlString) => {
+    if (!urlString) return false;
     try {
-        if (req.method !== 'POST') return next();
-        if (!req.body) return next();
+        const url = new URL(urlString);
+        if (url.protocol !== 'https:') return false;
+        
+        const hostname = url.hostname.toLowerCase();
+        
+        // 1. Reject localhost and loopback
+        const localHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
+        if (localHosts.includes(hostname)) return false;
+        
+        // 2. Reject private IPv4 ranges
+        // 10.x.x.x
+        if (hostname.startsWith('10.')) return false;
+        // 172.16.x.x - 172.31.x.x
+        if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)) return false;
+        // 192.168.x.x
+        if (hostname.startsWith('192.168.')) return false;
+        
+        // 3. Reject link-local (169.254.x.x)
+        if (hostname.startsWith('169.254.')) return false;
+        
+        // 4. Reject .local hosts
+        if (hostname.endsWith('.local')) return false;
 
-        const { copies, pages, format, paper } = req.body;
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
 
-        // Skip if it's not a pricing request (e.g., chat message)
-        if (copies === undefined && pages === undefined) return next();
+// ---- Production File Helpers (v5.3) ----
 
-        // Strict numerical ranges to prevent pricing fraud
-        if (copies !== undefined && (typeof copies !== 'number' || copies < 1 || copies > 100000)) {
-            return res.status(400).json({ error: 'Validation Error: Invalid copies count (1-100,000)' });
-        }
-        if (pages !== undefined && (typeof pages !== 'number' || pages < 1 || pages > 5000)) {
-            return res.status(400).json({ error: 'Validation Error: Invalid page count (1-5,000)' });
-        }
+const isServerBackedProductionFile = (file) => {
+    return Boolean(
+        ['UPLOADED', 'VALIDATED'].includes(file?.status) &&
+        file?.filename &&
+        Number(file?.size_bytes) > 0 &&
+        file?.file_id &&
+        file?.storage_url
+    );
+};
 
-        // Type validation for enums
-        const allowedFormats = ['A4', 'A5', 'Executive', 'Custom'];
-        if (format && !allowedFormats.includes(format)) {
-            return res.status(400).json({ error: 'Validation Error: Invalid book format' });
-        }
+const isClientDeclaredProductionFile = (file) => {
+    return Boolean(
+        file?.status === 'SELECTED' &&
+        file?.filename &&
+        Number(file?.size_bytes) > 0
+    );
+};
 
-        next();
+const isExternalLinkDeclared = (file) => {
+    return Boolean(
+        file?.source_type === 'DOWNLOAD_URL' &&
+        ['LINK_PROVIDED', 'LINK_PENDING_FETCH'].includes(file?.status) &&
+        validateUrlAgainstSsrf(file?.download_url)
+    );
+};
+
+const hasRequiredProductionFiles = (productionFiles) => {
+    const interior = productionFiles?.interior_pdf;
+    const cover = productionFiles?.cover_spine_back_pdf;
+
+    const isInteriorValid = isClientDeclaredProductionFile(interior) || 
+                           isServerBackedProductionFile(interior) || 
+                           isExternalLinkDeclared(interior);
+
+    const isCoverValid = isClientDeclaredProductionFile(cover) || 
+                        isServerBackedProductionFile(cover) || 
+                        isExternalLinkDeclared(cover);
+
+    return Boolean(
+        productionFiles?.required === true &&
+        Array.isArray(productionFiles?.required_files) &&
+        productionFiles.required_files.includes('INTERIOR_PDF') &&
+        productionFiles.required_files.includes('COVER_SPINE_BACK_PDF') &&
+        isInteriorValid &&
+        isCoverValid
+    );
+};
+
+const normalizeProductionFilesWorkflowStatus = (productionFiles) => {
+    const interiorStatus = productionFiles?.interior_pdf?.status;
+    const coverStatus = productionFiles?.cover_spine_back_pdf?.status;
+    const interiorSource = productionFiles?.interior_pdf?.source_type;
+    const coverSource = productionFiles?.cover_spine_back_pdf?.source_type;
+
+    if (interiorStatus === 'VALIDATED' && coverStatus === 'VALIDATED') {
+        return 'FILES_VALIDATED';
+    }
+
+    if (
+        interiorStatus === 'ERROR' ||
+        coverStatus === 'ERROR' ||
+        interiorStatus === 'REJECTED' ||
+        coverStatus === 'REJECTED'
+    ) {
+        return 'FILES_REJECTED';
+    }
+
+    const hasDownloadUrl = interiorSource === 'DOWNLOAD_URL' || coverSource === 'DOWNLOAD_URL';
+    const hasUpload = interiorSource === 'UPLOAD' || coverSource === 'UPLOAD';
+
+    if (hasDownloadUrl && hasUpload) {
+        return 'FILES_MIXED_DECLARED';
+    }
+
+    if (hasDownloadUrl) {
+        return 'FILES_FETCH_REQUIRED';
+    }
+
+    return 'FILES_SELECTED';
+};
+
+const enrichProductionFilesMetadata = (productionFiles) => {
+    const interior = productionFiles?.interior_pdf;
+    const cover = productionFiles?.cover_spine_back_pdf;
+    
+    const hasAnyLink = interior?.source_type === 'DOWNLOAD_URL' || cover?.source_type === 'DOWNLOAD_URL';
+    const hasAnyUpload = interior?.source_type === 'UPLOAD' || cover?.source_type === 'UPLOAD';
+
+    let storageStatus = 'CLIENT_DECLARED_ONLY';
+    if (hasAnyLink && hasAnyUpload) {
+        storageStatus = 'MIXED_CLIENT_DECLARED';
+    } else if (hasAnyLink) {
+        storageStatus = 'EXTERNAL_LINK_DECLARED';
+    }
+
+    return {
+        required: true,
+        status: normalizeProductionFilesWorkflowStatus(productionFiles),
+        required_files: ['INTERIOR_PDF', 'COVER_SPINE_BACK_PDF'],
+        interior_pdf: interior,
+        cover_spine_back_pdf: cover,
+        storage_status: storageStatus,
+        server_upload_required: hasAnyUpload,
+        server_fetch_required: hasAnyLink,
+        validation_scope: 'CLIENT_DECLARED_ONLY',
+        invoice_blocked_until: 'FILES_INGESTED_AND_VALIDATED'
+    };
+};
+
+const mapProductionFilesToOrderStatus = (productionFiles) => {
+    const workflowStatus = normalizeProductionFilesWorkflowStatus(productionFiles);
+    if (workflowStatus === 'FILES_VALIDATED') return 'FILES_VALIDATED';
+    return 'FILES_PENDING';
+};
+
+// 🔐 SECURITY: Challenge Context
+app.post('/api/security/challenge', (req, res) => {
+    const { payload_context } = req.body;
+    if (!payload_context) return res.status(400).json({ error: "Payload context required." });
+
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const timestamp = Date.now();
+    const token = generateHmac({ context: payload_context, nonce, timestamp });
+
+    res.json({ success: true, token, nonce, timestamp });
+});
+
+// 🧠 AI PROXY
+app.post('/api/ai/chat', async (req, res) => {
+    if (!GEMINI_API_KEY) return res.status(500).json({ error: "AI Service not configured." });
+
+    try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        
+        // Forwarding logic for Gemini
+        const response = await axios.post(geminiUrl, req.body, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        res.json(response.data);
     } catch (err) {
-        console.error('Validation Error in validateBPE:', err);
-        res.status(400).json({ error: 'Bad Request', details: 'Invalid payload structure' });
+        console.error("[AI_PROXY_ERROR]", err.message);
+        res.status(err.response?.status || 500).json({ 
+            error: "AI Proxy failed.", 
+            details: err.response?.data || err.message 
+        });
     }
-};
+});
 
-// Larger limit ONLY for proxy
-app.use('/api-proxy', express.json({ limit: '2mb' }));
-app.use('/api-proxy', validateBPE);
-app.use('/api-proxy', async (req, res, next) => {
-    console.log(req.ip);
-    // If the request is an upgrade request, it's for WebSockets, so pass to next middleware/handler
-    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-        return next(); // Pass to the WebSocket upgrade handler
+// 📊 BPE PROXY: Budget Calculation
+app.post('/api/budget/calculate', [
+    body('copies').isInt({ min: 1 }),
+    body('interior_pages').isInt({ min: 0 }),
+    body('delivery_country').isString().isLength({ min: 2, max: 2 })
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const sessionId = req.signedCookies['pp_session_id'] || crypto.randomBytes(16).toString('hex');
+    if (!req.signedCookies['pp_session_id']) {
+        res.cookie('pp_session_id', sessionId, { signed: true, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
     }
 
-    if (req.method === 'OPTIONS') {
-        // Preflight handled by cors middleware, but reinforcement for proxy specifically
-        return res.sendStatus(200);
-    }
-
-    // REDACTED: No body logging in production
     try {
-        // AI Budget Guard Logic
-        const sessionToken = req.signedCookies['pp_session_id'] || req.ip; // Fallback to IP if cookies disabled
-        const sessionData = sessionStore.get(sessionToken) || { requests: 0, lastSeen: Date.now() };
+        // In v5.2 this proxies to the actual BPE marketplace endpoint
+        const bpeUrl = `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
+        const headers = buildControlPlaneHeaders();
 
-        if (sessionData.requests >= SESSION_MAX_REQUESTS) {
-            console.warn(`AI Budget Guard triggered: Session ${sessionToken} exceeded quota.`);
-            return res.status(429).json({ error: 'AI Quota Exceeded for this session. Please try again tomorrow.' });
-        }
-
-        // Increment usage
-        sessionData.requests += 1;
-        sessionData.lastSeen = Date.now();
-        sessionStore.set(sessionToken, sessionData);
-
-        // Construct the target URL by taking the part of the path after /api-proxy/
-        const targetPath = req.url.startsWith('/') ? req.url.substring(1) : req.url;
-        // Prepare headers for the outgoing request
-        const outgoingHeaders = {};
-        // Copy most headers from the incoming request
-        for (const header in req.headers) {
-            // Exclude host-specific headers and others that might cause issues upstream
-            if (!['host', 'connection', 'content-length', 'transfer-encoding', 'upgrade', 'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions'].includes(header.toLowerCase())) {
-                outgoingHeaders[header] = req.headers[header];
-            }
-        }
-
-        // Determine target URL and specific headers
-        let apiUrl;
-        const isGemini = targetPath.startsWith('v1beta') || targetPath.startsWith('v1');
-
-        if (isGemini) {
-            apiUrl = `${externalApiBaseUrl}/${targetPath}`;
-            outgoingHeaders['X-Goog-Api-Key'] = apiKey;
-        } else {
-            // Default to WordPress proxy for wp-json and other paths
-            apiUrl = `https://printprice.pro/${targetPath}`;
-        }
-
-        console.log(`HTTP Proxy: [${req.method}] ${req.url} -> ${apiUrl}`);
-
-        // Set Content-Type from original request if present (for relevant methods)
-        if (req.headers['content-type'] && ['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
-            outgoingHeaders['Content-Type'] = req.headers['content-type'];
-        } else if (['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
-            // Default Content-Type to application/json if no content type for post/put/patch
-            outgoingHeaders['Content-Type'] = 'application/json';
-        }
-
-        // For GET or DELETE requests, ensure Content-Type is NOT sent,
-        // even if the client erroneously included it.
-        if (['GET', 'DELETE'].includes(req.method.toUpperCase())) {
-            delete outgoingHeaders['Content-Type']; // Case-sensitive common practice
-            delete outgoingHeaders['content-type']; // Just in case
-        }
-
-        // Ensure 'accept' is reasonable if not set
-        if (!outgoingHeaders['accept']) {
-            outgoingHeaders['accept'] = '*/*';
-        }
-
-
-        const axiosConfig = {
-            method: req.method,
-            url: apiUrl,
-            headers: outgoingHeaders,
-            responseType: 'stream',
-            timeout: 10000, // 10 second timeout for external API calls
-            validateStatus: function (status) {
-                return true; // Accept any status code, we'll pipe it through
-            },
-        };
-
-        if (['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
-            axiosConfig.data = req.body;
-        }
-        // For GET, DELETE, etc., axiosConfig.data will remain undefined,
-        // and axios will not send a request body.
-
-        const apiResponse = await axios(axiosConfig);
-
-        // Pass through response headers from Gemini API to the client
-        for (const header in apiResponse.headers) {
-            res.setHeader(header, apiResponse.headers[header]);
-        }
-        res.status(apiResponse.status);
-
-        // Ensure session cookies are set if this was an auto-init request
-        if (!req.signedCookies['pp_session']) {
-            res.cookie('pp_session', 'active', {
-                httpOnly: true,
-                signed: true,
-                secure: process.env.NODE_ENV === 'production' || true, // Force secure for budget subdomain
-                sameSite: 'Lax',
-                maxAge: 24 * 60 * 60 * 1000
-            });
-            if (!req.signedCookies['pp_session_id']) {
-                res.cookie('pp_session_id', require('crypto').randomBytes(16).toString('hex'), {
-                    httpOnly: true,
-                    signed: true,
-                    secure: process.env.NODE_ENV === 'production' || true,
-                    sameSite: 'Lax',
-                    maxAge: 24 * 60 * 60 * 1000
-                });
-            }
-        }
-
-
-        apiResponse.data.on('data', (chunk) => {
-            res.write(chunk);
-        });
-
-        apiResponse.data.on('end', () => {
-            res.end();
-        });
-
-        apiResponse.data.on('error', (err) => {
-            console.error('Error during streaming data from target API:', err);
-            if (!res.headersSent) {
-                res.status(500).json({ error: 'Proxy error during streaming from target' });
-            } else {
-                // If headers already sent, we can't send a JSON error, just end the response.
-                res.end();
-            }
-        });
-
-    } catch (error) {
-        console.error('Proxy error before request to target API:', error);
-        if (!res.headersSent) {
-            if (error.response) {
-                const errorData = {
-                    status: error.response.status,
-                    message: error.response.data?.error?.message || 'Proxy error from upstream API',
-                    details: error.response.data?.error?.details || null
-                };
-                res.status(error.response.status).json(errorData);
-            } else {
-                res.status(500).json({ error: 'Proxy setup error', message: error.message });
-            }
-        }
+        console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${req.body.delivery_country}`);
+        const response = await axios.post(bpeUrl, req.body, { headers, timeout: 10000 });
+        
+        res.json(response.data);
+    } catch (err) {
+        console.error("[BPE_PROXY_ERROR]", err.message);
+        res.status(502).json({ error: "Failed to fetch quotes from Book Price Engine." });
     }
 });
 
-const webSocketInterceptorScriptTag = `<script src="/public/websocket-interceptor.js" defer></script>`;
+// 🛒 CART API (Session-bound)
+app.get('/api/cart', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.json({ success: true, cart: [] });
+    res.json({ success: true, cart: carts.get(sessionId) || [] });
+});
 
-// Prepare service worker registration script content
-const serviceWorkerRegistrationScript = `
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load' , () => {
-    navigator.serviceWorker.register('./service-worker.js')
-      .then(registration => {
-        console.log('Service Worker registered successfully with scope:', registration.scope);
-      })
-      .catch(error => {
-        console.error('Service Worker registration failed:', error);
-      });
-  });
-} else {
-  console.log('Service workers are not supported in this browser.');
-}
-</script>
-`;
+app.post('/api/cart/add', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
 
-// Serve index.html or placeholder based on API key and file availability
-app.get('/', (req, res) => {
-    const placeholderPath = path.join(publicPath, 'placeholder.html');
+    const { specs, offer, pricing, allOffers, recommendedOffer, recommendedOfferId, selectedBy, metadata } = req.body;
 
-    // Try to serve index.html
-    console.log("LOG: Route '/' accessed. Attempting to serve index.html.");
-    const indexPath = path.join(staticPath, 'index.html');
+    // 1. Structural Validation
+    if (!specs || !offer || !pricing) {
+        return res.status(400).json({ error: 'specs, offer and pricing are required.' });
+    }
 
-    fs.readFile(indexPath, 'utf8', (err, indexHtmlData) => {
-        if (err) {
-            // index.html not found or unreadable, serve the original placeholder
-            console.log('LOG: index.html not found or unreadable. Falling back to original placeholder.');
-            return res.sendFile(placeholderPath);
-        }
+    // 2. Business Logic Validation
+    if (Number(specs.copies) <= 0 || Number(specs.interior_pages) <= 0) {
+        return res.status(400).json({ error: 'Invalid specifications.' });
+    }
 
-        // If API key is not set, serve original HTML without injection
-        if (!apiKey) {
-            console.log("LOG: API key not set. Serving original index.html without script injections.");
-            return res.sendFile(indexPath);
-        }
+    if (!/^[A-Z]{2}$/i.test(String(specs.delivery_country || ''))) {
+        return res.status(400).json({ error: 'Invalid delivery country.' });
+    }
 
-        // index.html found and apiKey set, inject scripts
-        console.log("LOG: index.html read successfully. Injecting scripts.");
-        let injectedHtml = indexHtmlData;
+    // 3. Precision Gating
+    if (offer.checkout_allowed === false || offer.status === 'Range') {
+        return res.status(400).json({ error: 'This quote is not precise enough for checkout.' });
+    }
 
+    // 4. Price Integrity
+    const totalPrice = Number(pricing.total_price ?? offer.total_price ?? offer.total_cost);
+    if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+        return res.status(400).json({ error: 'Invalid selected offer price.' });
+    }
 
-        if (injectedHtml.includes('<head>')) {
-            // Inject WebSocket interceptor first, then service worker script
-            injectedHtml = injectedHtml.replace(
-                '<head>',
-                `<head>${webSocketInterceptorScriptTag}${serviceWorkerRegistrationScript}`
-            );
-            console.log("LOG: Scripts injected into <head>.");
-        } else {
-            console.warn("WARNING: <head> tag not found in index.html. Prepending scripts to the beginning of the file as a fallback.");
-            injectedHtml = `${webSocketInterceptorScriptTag}${serviceWorkerRegistrationScript}${indexHtmlData}`;
-        }
-        // Set Signed HttpOnly Cookie to authorize the proxy for this session
-        // Using a unique session ID for tracking
-        const sessionId = req.signedCookies['pp_session_id'] || require('crypto').randomBytes(16).toString('hex');
+    const cart = carts.get(sessionId) || [];
+    if (cart.length >= 5) return res.status(400).json({ error: "Cart limit reached." });
 
-        res.cookie('pp_session', 'active', {
-            httpOnly: true,
-            signed: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Lax',
-            maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    const newItem = {
+        id: `item_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+        specs: {
+            ...specs,
+            delivery_country: String(specs.delivery_country || '').toUpperCase(),
+        },
+        offer,
+        pricing: {
+            ...pricing,
+            total_price: totalPrice,
+            currency: pricing.currency || offer.currency || 'EUR',
+        },
+        allOffers: Array.isArray(allOffers) ? allOffers : [],
+        recommendedOffer: recommendedOffer || null,
+        recommendedOfferId: recommendedOfferId || null,
+        selectedBy: selectedBy || 'CUSTOMER',
+        metadata: {
+            ...metadata,
+            contract: 'BPE_MARKETPLACE_NATIVE',
+            source: 'PRINTPRICE_APP',
+            bpe_endpoint: '/api/marketplace/offers',
+            payment_status: metadata?.payment_status || 'PENDING',
+        },
+        addedAt: new Date().toISOString(),
+    };
+
+    cart.push(newItem);
+    carts.set(sessionId, cart);
+    res.json({ success: true, item_id: newItem.id, cart_count: cart.length });
+});
+
+app.delete('/api/cart/items/:id', (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+
+    let cart = carts.get(sessionId) || [];
+    cart = cart.filter(i => i.id !== req.params.id);
+    carts.set(sessionId, cart);
+    res.json({ success: true, cart_count: cart.length });
+});
+
+// 🚀 CHECKOUT API (v5.3 Hardened)
+app.post('/api/cart/checkout', async (req, res) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    if (!sessionId) return res.status(401).json({ error: 'No session.' });
+
+    const cart = carts.get(sessionId) || [];
+    if (!cart.length) return res.status(400).json({ error: 'Cart is empty.' });
+
+    const { user, user_id, metadata } = req.body;
+    const targetUserId = user?.user_id || user_id;
+    if (!targetUserId) {
+        return res.status(401).json({ error: 'Checkout requires a logged-in user.' });
+    }
+
+    const productionFiles = metadata?.production_files;
+
+    // v5.3: Mandatory production files validation
+    if (!hasRequiredProductionFiles(productionFiles)) {
+        return res.status(400).json({
+            error: 'Production files (PDFs or HTTPS links) are required before checkout.'
         });
+    }
 
-        res.cookie('pp_session_id', sessionId, {
-            httpOnly: true,
-            signed: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Lax',
-            maxAge: 24 * 60 * 60 * 1000
-        });
+    const controlPlaneOrdersUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/orders`;
+    const headers = buildControlPlaneHeaders();
 
-        res.send(injectedHtml);
-    });
-});
-
-app.get('/service-worker.js', (req, res) => {
-    return res.sendFile(path.join(publicPath, 'service-worker.js'));
-});
-
-app.use('/public', express.static(publicPath));
-app.use(express.static(staticPath));
-
-// Start the HTTP server
-const server = app.listen(port, () => {
-    console.log(`Server listening on port ${port}`);
-    console.log(`HTTP proxy active on /api-proxy/**`);
-    console.log(`WebSocket proxy active on /api-proxy/**`);
-});
-
-// Create WebSocket server and attach it to the HTTP server
-const wss = new WebSocket.Server({ noServer: true });
-
-server.on('upgrade', (request, socket, head) => {
-    const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-    const pathname = requestUrl.pathname;
-
-    if (pathname.startsWith('/api-proxy/')) {
-        if (!apiKey) {
-            console.error("WebSocket proxy: API key not configured. Closing connection.");
-            socket.destroy();
-            return;
-        }
-
-        wss.handleUpgrade(request, socket, head, (clientWs) => {
-            const sessionToken = request.signedCookies['pp_session_id'] || request.socket.remoteAddress;
-            const sessionData = sessionStore.get(sessionToken) || { requests: 0, lastSeen: Date.now(), wsConnections: 0 };
-
-            // Limit concurrent WS connections per session
-            if (sessionData.wsConnections >= 3) {
-                console.warn(`WS connection limit reached for session ${sessionToken}`);
-                clientWs.close(1008, 'Simultaneous connection limit reached');
-                return;
-            }
-
-            sessionData.wsConnections += 1;
-            sessionStore.set(sessionToken, sessionData);
-
-            let msgCount = 0;
-            const MSG_RATE_LIMIT = 20; // max messages per 10 seconds
-            const msgResetInterval = setInterval(() => { msgCount = 0; }, 10000);
-
-            console.log('Client WebSocket connected to proxy for path:', pathname);
-
-            const targetPathSegment = pathname.substring('/api-proxy'.length);
-            const clientQuery = new URLSearchParams(requestUrl.search);
-            clientQuery.set('key', apiKey);
-            const targetGeminiWsUrl = `${externalWsBaseUrl}${targetPathSegment}?${clientQuery.toString()}`;
-
-            // REDACTED: Log redacted URL (no secrets)
-            console.log(`Attempting to connect to target WebSocket: ${externalWsBaseUrl}${targetPathSegment}?[REDACTED]`);
-
-            const geminiWs = new WebSocket(targetGeminiWsUrl, {
-                protocol: request.headers['sec-websocket-protocol'],
-            });
-
-            const messageQueue = [];
-
-            geminiWs.on('open', () => {
-                console.log('Proxy connected to Gemini WebSocket');
-                // Send any queued messages
-                while (messageQueue.length > 0) {
-                    const message = messageQueue.shift();
-                    if (geminiWs.readyState === WebSocket.OPEN) {
-                        // console.log('Sending queued message from client -> Gemini');
-                        geminiWs.send(message);
-                    } else {
-                        // Should not happen if we are in 'open' event, but good for safety
-                        console.warn('Gemini WebSocket not open when trying to send queued message. Re-queuing.');
-                        messageQueue.unshift(message); // Add it back to the front
-                        break; // Stop processing queue for now
+    const createdOrders = [];
+    try {
+        for (const item of cart) {
+            const order_ref = `app_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+            const source_ref = `ppp_app_checkout_${Date.now()}`;
+            
+            /** @type {import('../types').ControlPlaneOrderPayload} */
+            const payload = {
+                source: "PRINTPRICE_APP",
+                source_ref: source_ref,
+                order_ref: order_ref,
+                user_id: targetUserId,
+                customer: {
+                    id: targetUserId,
+                    email: user?.email || 'customer@example.com',
+                    name: user?.name || 'Customer',
+                    role: user?.role || 'AUTHOR',
+                    billing: user?.billing || {},
+                    delivery: user?.delivery || { country: item.specs.delivery_country }
+                },
+                specs: item.specs,
+                pricing: {
+                    currency: item.pricing.currency,
+                    selected_by: "CUSTOMER",
+                    customer_selected_offer_id: item.offer.id,
+                    recommended_offer_id: item.recommendedOfferId || null,
+                    total_price: item.pricing.total_price,
+                    total_cost: item.pricing.total_cost,
+                    margin: item.pricing.margin,
+                    margin_percent: item.pricing.margin_percent
+                },
+                delivery: {
+                    country: item.specs.delivery_country,
+                    lead_time_days: item.offer.lead_time_days,
+                    estimated_delivery_time: item.offer.estimated_delivery_time || ''
+                },
+                metadata_json: {
+                    contract: "BPE_MARKETPLACE_NATIVE",
+                    app: "PrintPricePro_BookPrice",
+                    bpe_endpoint: "/api/marketplace/offers",
+                    payment_status: "PENDING",
+                    customer_selected_offer: item.offer,
+                    offers_snapshot: item.allOffers,
+                    chat_context: item.metadata?.chat_context || {},
+                    ui_context: item.metadata?.ui_context || {},
+                    // v5.3 enriched metadata
+                    production_files: enrichProductionFilesMetadata(productionFiles),
+                    invoice_payment: {
+                        invoice_status: 'PENDING_FILES',
+                        payment_status: 'PENDING'
                     }
-                }
-            });
+                },
+                status: mapProductionFilesToOrderStatus(productionFiles)
+            };
 
-            geminiWs.on('message', (message) => {
-                // console.log('Message from Gemini -> client');
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(message);
-                }
-            });
+            const response = await axios.post(controlPlaneOrdersUrl, payload, { headers, timeout: 15000 });
+            createdOrders.push(response.data.order || response.data);
+        }
 
-            geminiWs.on('close', (code, reason) => {
-                console.log(`Gemini WebSocket closed: ${code} ${reason.toString()}`);
-                if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
-                    clientWs.close(code, reason.toString());
-                }
-            });
+        // Clear cart after successful checkout
+        carts.set(sessionId, []);
+        
+        const firstOrder = createdOrders[0] || {};
+        const firstRef = firstOrder.order_ref || firstOrder.orderRef || null;
 
-            geminiWs.on('error', (error) => {
-                console.error('Error on Gemini WebSocket connection:', error);
-                if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
-                    clientWs.close(1011, 'Upstream WebSocket error');
-                }
-            });
-
-            clientWs.on('message', (message) => {
-                msgCount++;
-                if (msgCount > MSG_RATE_LIMIT) {
-                    console.warn(`WebSocket flood detected for session ${sessionToken}`);
-                    return; // Drop message if flooded
-                }
-
-                if (geminiWs.readyState === WebSocket.OPEN) {
-                    // console.log('Message from client -> Gemini');
-                    geminiWs.send(message);
-                } else if (geminiWs.readyState === WebSocket.CONNECTING) {
-                    // console.log('Queueing message from client -> Gemini (Gemini still connecting)');
-                    messageQueue.push(message);
-                } else {
-                    console.warn('Client sent message but Gemini WebSocket is not open or connecting. Message dropped.');
-                }
-            });
-
-            clientWs.on('close', (code, reason) => {
-                clearInterval(msgResetInterval);
-                const currentSession = sessionStore.get(sessionToken);
-                if (currentSession) {
-                    currentSession.wsConnections = Math.max(0, currentSession.wsConnections - 1);
-                    sessionStore.set(sessionToken, currentSession);
-                }
-                console.log(`Client WebSocket closed: ${code} ${reason.toString()}`);
-                if (geminiWs.readyState === WebSocket.OPEN || geminiWs.readyState === WebSocket.CONNECTING) {
-                    geminiWs.close(code, reason.toString());
-                }
-            });
-
-            clientWs.on('error', (error) => {
-                console.error('Error on client WebSocket connection:', error);
-                if (geminiWs.readyState === WebSocket.OPEN || geminiWs.readyState === WebSocket.CONNECTING) {
-                    geminiWs.close(1011, 'Client WebSocket error');
-                }
-            });
+        res.json({ 
+            success: true, 
+            order_ref: firstRef,
+            orders: createdOrders,
+            payment_url: null, // v5.3: Blocked until validation
+            checkout_url: null,
+            message: "Order request created. Payment pending until production files are ingested and validated."
         });
-    } else {
-        console.log(`WebSocket upgrade request for non-proxy path: ${pathname}. Closing connection.`);
-        socket.destroy();
+    } catch (err) {
+        console.error("[CHECKOUT_ERROR]", err.message);
+        res.status(502).json({ error: "Failed to submit order to Control Plane." });
     }
 });
 
-// Final JSON Error Handler to prevent HTML leakage
-app.use((err, req, res, next) => {
-    console.error('SERVER ERROR:', err);
-    if (res.headersSent) return next(err);
-    res.status(err.status || 500).json({
-        error: 'Internal Server Error',
-        message: req.path.startsWith('/api-proxy') ? 'Proxy Failed' : err.message
-    });
+app.listen(PORT, () => {
+    console.log(`v5.2 Adversarial Node Server running on port ${PORT}`);
 });

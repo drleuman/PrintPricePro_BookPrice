@@ -3,7 +3,7 @@ import { BookSize, Orientation, InteriorPrint, CoverPrint, BindingMethod, Finish
 // --- API Endpoints ---
 // Forzamos siempre producción en printprice.pro para evitar problemas
 // cuando la SPA está alojada en otro dominio (AI Studio, bucket, etc.).
-export const BOOK_PRICE_API_ENDPOINT = '/api-proxy/wp-json/bpe/v1/estimates';
+export const BOOK_PRICE_API_ENDPOINT = '/api/budget/calculate';
 
 
 // Form Options (matching smoke test exactly)
@@ -177,8 +177,7 @@ export const DELIVERY_COUNTRIES = [
 ];
 
 // AI Assistant endpoints
-export const AI_ASSISTANT_ENDPOINT =
-  '/api-proxy/wp-json/ppp-ai/v1/chat';
+export const AI_ASSISTANT_ENDPOINT = '/api/ai/chat';
 
 export const PRINTPRICE_ASSISTANT_PROMPT = `You are PrintPrice Pro AI Assistant.
 
@@ -238,5 +237,3 @@ Your reply MUST start with a friendly acknowledgement, then EXACTLY:
 FINAL CHECK: Ensure all numbers are integers in JSON. Ensure specs_patch is NEVER empty if the user requested a change.`;
 
 
-export const CREATE_ORDER_ENDPOINT =
-  '/api-proxy/wp-json/custom-print/v1/create-order';

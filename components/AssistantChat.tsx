@@ -1,8 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AI_ASSISTANT_ENDPOINT, PRINTPRICE_ASSISTANT_PROMPT, BOOK_PRICE_API_ENDPOINT } from '../constants';
-import { InitialBookPricePayload, BookPriceResponse } from '../types';
-import { PaperAirplaneIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/solid';
+import {
+  AI_ASSISTANT_ENDPOINT,
+  PRINTPRICE_ASSISTANT_PROMPT,
+  BOOK_PRICE_API_ENDPOINT,
+} from '../constants';
+import { InitialBookPricePayload, BookPriceResponse, BookPriceOffer } from '../types';
+import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
 import { t } from '../i18n/en';
+import { normaliseApiResponse } from '../lib/normaliseApiResponse';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -11,6 +16,7 @@ interface ChatMessage {
   role: ChatRole;
   content: string;
   kind?: 'text' | 'offers';
+  offersSnapshot?: BookPriceResponse;
   ui?: {
     show_offers?: boolean;
     recommended_offer_ids?: string[];
@@ -22,7 +28,18 @@ interface AssistantChatProps {
   offers: BookPriceResponse | null;
   onSpecsPatch: (patch: Partial<InitialBookPricePayload>) => void;
   onOffersUpdate: (offers: BookPriceResponse) => void;
-  onChooseOffer: (offer: any) => Promise<void>;
+  onChooseOffer: (offer: BookPriceOffer) => Promise<void>;
+  selectedOfferId?: string | null;
+}
+
+// Security Layer 2: Challenge Context Helper (v5.2)
+async function getPayloadContext(data: any) {
+  // Use core fields that define the pricing model to bind the token
+  const coreFields = [data.copies, data.interior_pages || 0, data.book_size];
+  const msgUint8 = new TextEncoder().encode(JSON.stringify(coreFields));
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -31,14 +48,17 @@ interface AssistantChatProps {
  * {
  *   "reply": "text to show the user",
  *   "specs_patch": { ...patched fields for the form... },
- *   "offers": { success, message?, offers: [...] },
- *   "order_url": "https://printprice.pro/print_order/123"
+ *   "ui": { "show_offers": true },
+ *   "order_url": "optional review URL"
  * }
+ *
+ * Important:
+ * Assistant responses must not be treated as pricing authority.
+ * Real offers must always be fetched through BOOK_PRICE_API_ENDPOINT.
  */
 interface AssistantResponse {
   reply: string;
   specs_patch?: Partial<InitialBookPricePayload> | null;
-  offers?: BookPriceResponse;
   order_url?: string;
   ui?: {
     show_offers?: boolean;
@@ -52,6 +72,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   onSpecsPatch,
   onOffersUpdate,
   onChooseOffer,
+  selectedOfferId,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -128,15 +149,16 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         throw new Error(`HTTP ${res.status}`);
       }
 
-      const data: AssistantResponse = await res.json();
+      const rawData: any = await res.json();
+      const data: AssistantResponse =
+        typeof rawData === 'string'
+          ? { reply: rawData }
+          : rawData;
+
       console.log('AI Assistant Raw Response:', data);
 
       let finalReply = data.reply || '';
       let patch = data.specs_patch;
-
-      if (!finalReply && typeof data === 'string') {
-        finalReply = data;
-      }
 
       // 1) Normalize the patch coming from the backend
       if (patch) {
@@ -257,7 +279,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
       console.log('Heuristic Patch:', heuristicPatch);
 
       // 3) MERGE & OVERRIDE: Heuristic overrides patch if conflict detected for critical fields
-      let finalPatch = { ...patch };
+      let finalPatch: Partial<InitialBookPricePayload> = { ...(patch ?? {}) };
 
       // Conflict guards: if user clearly stated intent, heuristic wins over backend patch
       if (heuristicPatch.copies !== undefined) finalPatch.copies = heuristicPatch.copies;
@@ -340,43 +362,54 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         onSpecsPatch(finalPatch);
       }
 
-      // 6) OFFERS AUTO-HEALING
-      // If backend returned no offers (likely because of hallucinated 0 pages),
-      // but we now have valid pages, fetch offers manually.
-      let healedOffers = data.offers;
-      if (!healedOffers?.offers?.length && appliedSpecs.interior_pages > 0) {
-        console.log('Backend failed to provide offers. Auto-healing offers using corrected specs...');
+      // 6) OFFERS AUTO-HEALING (Hardened v5.2)
+      // Only fetch offers if pages are valid AND user asked or UI requested them
+      const userAskedForOffers = /\b(price|prices|quote|quotes|offer|offers|cost|calculate|precio|oferta|coste|calcular)\b/i.test(trimmed);
+      const validPages = Number(appliedSpecs.interior_pages) > 0;
+      const shouldFetchOffers = validPages && (data.ui?.show_offers === true || userAskedForOffers);
+
+      let healedOffers: BookPriceResponse | null = null;
+
+      if (shouldFetchOffers) {
+        console.log('Performing auto-healing handshake with secure budget path...');
         try {
+          // 1. Obtain Bound Server Challenge
+          const payloadCtx = await getPayloadContext(appliedSpecs);
+          const challengeRes = await fetch('/api/security/challenge', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload_context: payloadCtx })
+          });
+          if (!challengeRes.ok) throw new Error('Infrastructure safeguard triggered.');
+          const { token, nonce, timestamp } = await challengeRes.json();
+
+          // 2. Request Final Calculation with token
           const bpeRes = await fetch(BOOK_PRICE_API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(appliedSpecs),
+            body: JSON.stringify({
+              ...appliedSpecs,
+              security_token: token,
+              nonce,
+              timestamp
+            }),
           });
           if (bpeRes.ok) {
             const bpeData = await bpeRes.json();
-            // Normalise manually as we do in App.tsx (simplified for internal use)
-            const rawOffers = bpeData.print_houses || bpeData.offers || [];
-            if (rawOffers.length > 0) {
-              healedOffers = {
-                success: true,
-                offers: rawOffers.map((o: any, idx: number) => ({
-                  id: String(o.house_id || o.id || `healed-${idx}`),
-                  print_house: o.print_house || 'Print house',
-                  total_cost: o.total_cost || o.total_price || 0,
-                  currency: o.currency || 'EUR',
-                  estimated_delivery_time: o.estimated_delivery_time || '',
-                  breakdown: o.lines || o.breakdown || [],
-                })),
-              };
-              onOffersUpdate(healedOffers);
-              console.log('Offers successfully healed:', healedOffers);
+            const normalised = normaliseApiResponse(bpeData);
+            
+            if (normalised.offers.length > 0) {
+              healedOffers = normalised;
+              onOffersUpdate(normalised);
+              console.log('Offers successfully healed via shared normalizer:', healedOffers);
             }
           }
         } catch (e) {
-          console.error('Failed to heal offers:', e);
+          console.error('Failed to heal offers safely:', e);
         }
-      } else if (healedOffers) {
-        onOffersUpdate(healedOffers);
+      } else if (offers?.offers?.length) {
+        // Use existing offers if pages are valid but no new fetch was triggered
+        healedOffers = offers;
       }
 
       // 7) SHOW OFFERS if UI requested or we have them
@@ -391,6 +424,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
             role: 'assistant',
             content: '',
             kind: 'offers',
+            offersSnapshot: healedOffers ?? undefined,
             ui: {
               show_offers: true,
               recommended_offer_ids: data.ui?.recommended_offer_ids || [],
@@ -406,7 +440,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
           {
             id: `a-order-${Date.now()}`,
             role: 'assistant',
-            content: `Order created successfully. Link to the order: ${data.order_url}`,
+            content: `Order request created. Payment remains pending. You can review it here: ${data.order_url}`,
           },
         ]);
       }
@@ -422,113 +456,207 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
   };
 
   return (
-    <section className="mb-12 mx-2 sm:mx-4">
-      <div className="bg-white shadow-xl rounded-2xl border border-gray-100 flex flex-col h-[480px] overflow-hidden transition-all duration-300">
-        <div className="bg-white pl-10 pr-6 py-5 flex items-center justify-between text-gray-900 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-50 rounded-xl">
-              <ChatBubbleLeftRightIcon className="w-5 h-5 text-gray-400" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold tracking-tight">
-                PrintPrice Pro – AI Assistant
-              </h2>
-              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-                Expert knowledge at your service
-              </p>
-            </div>
+    <section className="mb-12">
+      <div className="bg-corporate-secondary border border-white/5 flex flex-col h-[520px] overflow-hidden transition-all duration-300 relative">
+        <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[6rem] font-black pointer-events-none uppercase">
+          AI_LOG
+        </div>
+        <div className="bg-corporate-primary/50 pl-10 pr-6 py-6 flex items-center justify-between border-b border-white/5 relative z-10">
+          <div>
+            <h2 className="text-xs font-technical font-black tracking-monolith text-corporate-text uppercase">
+              AI Assistant
+            </h2>
+            <p className="text-[10px] text-corporate-muted font-technical uppercase tracking-widest mt-2">
+              status: optimal_routing / nodes: active
+            </p>
           </div>
-          <div className="flex items-center gap-2 bg-green-50 px-2 py-1 rounded-full border border-green-100">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
-            </span>
-            <span className="text-[9px] font-bold uppercase tracking-widest text-green-700">Online</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 bg-corporate-accent/5 px-4 py-2 border border-corporate-accent/20">
+              <div className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-corporate-accent opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-corporate-accent"></span>
+              </div>
+              <span className="text-[9px] font-technical font-black uppercase tracking-monolith text-corporate-accent">Online</span>
+            </div>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto space-y-4 pl-10 pr-6 py-6 scroll-smooth bg-gray-50/30">
+        <div className="flex-1 overflow-y-auto space-y-6 pl-10 pr-6 py-8 scroll-smooth bg-corporate-primary/30">
           {messages.map((m) => (
             <div
               key={m.id}
               className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${m.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-tr-none'
-                  : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
+                className={`max-w-[75%] transition-all duration-300 ${m.role === 'user'
+                  ? 'p-6 bg-corporate-accent text-white border-l-4 border-white/20'
+                  : m.kind === 'offers'
+                    ? 'text-corporate-text w-full'
+                    : 'p-6 bg-corporate-elevated/20 text-corporate-text border border-corporate-text/10'
                   }`}
               >
                 {m.content.includes('Project Summary') ? (
-                  <div className="space-y-4">
-                    <p className="font-semibold border-b border-gray-200 pb-1 mb-2">📋 {t('project_summary_title') || 'Project Summary'}</p>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                  <div className="space-y-6">
+                    <p className="text-xs font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4 mb-4">
+                      {t('project_summary_title') || 'Project Summary'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
                       {m.content.split('\n').filter(line => line.includes(':')).map((line, idx) => {
                         const [label, value] = line.replace(/^[•\-\*]\s*/, '').split(':');
                         return (
-                          <div key={idx} className="flex flex-col">
-                            <span className="text-gray-400 uppercase text-[9px] font-bold tracking-tight">{label.trim()}</span>
-                            <span className="font-medium text-gray-700">{value?.trim()}</span>
+                          <div key={idx} className="flex flex-col gap-1">
+                            <span className="text-corporate-text-secondary opacity-70 uppercase text-[9px] font-technical font-black tracking-technical">{label.trim()}</span>
+                            <span className="font-technical text-corporate-text uppercase text-[11px] tracking-wider">{value?.trim()}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 ) : m.kind === 'offers' ? (
-                  <div className="space-y-3">
-                    <p className="font-semibold border-b border-gray-200 pb-1 italic">✨ {t('recommended_offers') || 'Recommended Offers'}</p>
-                    <div className="space-y-2">
-                      {offers?.offers?.length ? (
-                        [...offers.offers].sort((a, b) => a.total_cost - b.total_cost).slice(0, 3).map((offer, index) => {
-                          const isBest = index === 0;
+                  <div className="space-y-6 min-w-[300px]">
+                    <p className="text-[0.6rem] font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4">
+                      {t('recommended_offers') || 'Recommended Offers'}
+                    </p>
+                    <div className="space-y-3">
+                      {(() => { 
+                        const displayOffers = m.offersSnapshot ?? offers; 
+                        if (!displayOffers?.offers?.length) {
                           return (
-                            <button
-                              key={offer.id}
-                              onClick={() => onChooseOffer(offer)}
-                              className={`w-full text-left bg-white hover:bg-red-50 border ${isBest ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} hover:border-red-200 rounded-xl p-3 transition-all duration-200 group relative overflow-hidden shadow-sm`}
-                            >
-                              {isBest && (
-                                <div className="absolute top-0 right-0 bg-red-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg uppercase tracking-widest">
-                                  Best Price
-                                </div>
-                              )}
-                              <div className="flex justify-between items-start mb-1">
-                                <span className="text-xs font-bold text-gray-800 group-hover:text-red-700">{offer.print_house}</span>
-                                <span className="text-xs font-bold text-red-600">{offer.total_cost.toLocaleString()} {offer.currency}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] text-gray-500 italic">
-                                <span>🚚 {offer.estimated_delivery_time || 'Check delivery'}</span>
-                              </div>
-                              <div className="mt-2 text-[9px] font-bold text-red-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
-                                Select this offer →
-                              </div>
-                            </button>
+                            <div className="text-[10px] font-technical text-corporate-muted uppercase tracking-widest italic py-4">
+                              node_calculation in progress...
+                            </div>
                           );
-                        })
-                      ) : (
-                        <div className="text-xs text-gray-400 italic py-2">
-                          Calculating offers... please wait.
-                        </div>
-                      )}
+                        }
+
+                        const recommended = displayOffers.offers.find(o => o.recommended);
+                        const sortedOffers = [...displayOffers.offers].sort((a, b) => {
+                          const getP = (o: any) => Number(o.total_price ?? o.total_cost ?? Number.MAX_SAFE_INTEGER);
+                          return getP(a) - getP(b);
+                        });
+
+                        const topThree = sortedOffers.slice(0, 3);
+                        const visibleOffers =
+                          recommended && !topThree.some(o => o.id === recommended.id)
+                            ? [...topThree, recommended]
+                            : topThree;
+
+                        return visibleOffers.map((offer, index) => {
+                          const isBestPrice = index === 0;
+                          const isSelected = selectedOfferId === offer.id;
+                          const isRecommended = offer.recommended;
+                          const displayPrice = Number(offer.total_price ?? offer.total_cost ?? 0);
+                          const hasFiniteDisplayPrice = Number.isFinite(displayPrice) && displayPrice > 0;
+                          
+                          return (
+                            <div
+                              key={offer.id}
+                              className={`border p-6 flex flex-col gap-4 transition-all duration-300 relative group overflow-hidden ${
+                                isSelected ? 'border-corporate-accent/30 bg-corporate-primary' : 'border-corporate-text/10 bg-transparent'
+                              }`}
+                            >
+                              <div className="absolute top-0 right-0 h-1 bg-corporate-accent w-0 group-hover:w-full transition-all duration-500" />
+                              <div className="flex justify-between items-center gap-4 relative z-10">
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith">
+                                      {offer.print_house}
+                                    </p>
+                                    {isRecommended && (
+                                      <span className="bg-corporate-accent/10 text-corporate-accent text-[8px] font-technical font-black px-1.5 py-0.5 border border-corporate-accent/20 tracking-tighter">
+                                        RECOMMENDED BY BPE
+                                      </span>
+                                    )}
+                                  </div>
+                                  {offer.checkout_allowed === false && (
+                                    <p className="text-[10px] font-technical text-corporate-accent uppercase tracking-wider mb-2">
+                                      {offer.message || offer.status || 'Precision quote required'}
+                                    </p>
+                                  )}
+                                  {offer.estimated_delivery_time && (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1 h-1 bg-corporate-accent animate-pulse" />
+                                      <p className="text-[10px] font-technical text-corporate-muted uppercase tracking-wider">
+                                        ETA: {offer.estimated_delivery_time}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  {offer.range ? (
+                                    <p className="text-xl font-display font-black text-corporate-text tracking-tighter">
+                                      {offer.range}
+                                    </p>
+                                  ) : hasFiniteDisplayPrice ? (
+                                    <p className="text-2xl font-display font-black text-corporate-text tracking-tighter">
+                                      {displayPrice.toFixed(2)} <span className="text-corporate-accent text-sm">{offer.currency}</span>
+                                    </p>
+                                  ) : (
+                                    <p className="text-sm font-technical font-black text-corporate-muted tracking-tighter uppercase">
+                                      Unavailable
+                                    </p>
+                                  )}
+                                  {isSelected ? (
+                                    <p className="text-[9px] text-corporate-accent font-technical font-black uppercase tracking-monolith mt-1">
+                                      SELECTED BY YOU
+                                    </p>
+                                  ) : isBestPrice ? (
+                                    <p className="text-[9px] text-corporate-muted font-technical font-black uppercase tracking-monolith mt-1">
+                                      BEST PRICE
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { 
+                                    if (offer.checkout_allowed === false) return;
+                                    if (m.offersSnapshot) onOffersUpdate(m.offersSnapshot); 
+                                    onChooseOffer(offer); 
+                                  }}
+                                  disabled={isSelected || offer.checkout_allowed === false}
+                                  className={`inline-flex items-center px-6 py-2 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300 shrink-0
+                                    ${isSelected
+                                      ? 'bg-corporate-accent/20 border border-corporate-accent/40 text-corporate-accent cursor-default'
+                                      : offer.checkout_allowed === false
+                                        ? 'bg-corporate-muted/20 border border-corporate-muted/20 text-corporate-muted cursor-not-allowed'
+                                        : isBestPrice || isRecommended
+                                          ? 'bg-corporate-accent text-white hover:bg-corporate-hover hover:shadow-[0_0_20px_rgba(220,0,0,0.2)]'
+                                          : 'bg-transparent border border-corporate-text/20 text-corporate-text hover:bg-corporate-text/5'
+                                    }`}
+                                >
+                                  {isSelected 
+                                    ? '[✓] SELECTED_FOR_CART' 
+                                    : offer.checkout_allowed === false
+                                      ? '[!] Precision Quote Required'
+                                      : selectedOfferId 
+                                        ? 'Replace selection →' 
+                                        : 'Choose this offer →'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 ) : (
-                  <div className="whitespace-pre-line">{m.content}</div>
+                  <div className="font-technical text-[13px] leading-relaxed tracking-wide whitespace-pre-line">{m.content}</div>
                 )}
               </div>
             </div>
           ))}
+
           {error && (
-            <p className="text-xs text-red-600 mt-1">
-              Error: {error}
-            </p>
+            <div className="bg-corporate-accent/10 border border-corporate-accent/20 p-4">
+              <p className="text-[10px] font-technical font-black text-corporate-accent uppercase tracking-monolith">System Exception</p>
+              <p className="text-xs text-corporate-text-secondary mt-1">{error}</p>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
-        <div className="pl-10 pr-6 py-5 bg-white border-t border-gray-100 flex items-center gap-3">
+        <div className="pl-10 pr-6 py-6 bg-corporate-secondary border-t border-white/5 flex items-center gap-6 relative z-10">
           <textarea
             rows={1}
             value={input}
@@ -539,19 +667,19 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                 sendMessage();
               }
             }}
-            placeholder="E.g., I want to print 500 copies of a hardcover novel in A5..."
-            className="flex-1 resize-none border-none focus:ring-0 text-sm py-2 placeholder-gray-400"
+            placeholder="Describe system_project requirements..."
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-corporate-text placeholder-corporate-muted font-technical tracking-wide"
           />
           <button
             type="button"
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 transition-all duration-200"
+            className="w-12 h-12 flex items-center justify-center bg-corporate-accent text-white hover:bg-corporate-hover transition-all duration-300 disabled:opacity-30 group"
           >
             {loading ? (
-              <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              <span className="w-4 h-4 border-2 border-white border-b-transparent animate-spin" />
             ) : (
-              <PaperAirplaneIcon className="h-4 w-4" />
+              <PaperAirplaneIcon className="h-5 w-5 transform -rotate-45 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
             )}
           </button>
         </div>

@@ -95,6 +95,12 @@ const en = {
   // Header
   about_app: "About",
   contact: "Contact",
+  
+  // New UI Labels
+  book_specifications_label: "Book specifications",
+  system_error_label: "System Error",
+  calculating_node_offers: "Calculating node_offers...",
+  status_waiting_input: "status: waiting_for_input",
 
   // Chat
   project_summary_title: "Project Summary",
@@ -102,7 +108,8 @@ const en = {
 };
 
 export const t = (key: keyof typeof en, replacements?: { [key: string]: string | number }) => {
-  let message = en[key] || key;
+  let message = (en as any)[key] || key;
+
   if (replacements) {
     for (const placeholder in replacements) {
       if (Object.prototype.hasOwnProperty.call(replacements, placeholder)) {
