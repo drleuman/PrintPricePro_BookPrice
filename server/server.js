@@ -22,27 +22,29 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // CONTROL PLANE / BPE CONFIG
 const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8081";
+const CONTROL_PLANE_API_KEY =
+  process.env.CONTROL_PLANE_API_KEY ||
+  process.env.CONTROL_PLANE_TOKEN ||
+  process.env.PPOS_CONTROL_TOKEN ||
+  "ppp_secret_api_key_v1";
+
+const IDENTITY_API_URL =
+  process.env.CONTROL_PLANE_AUTH_URL ||
+  process.env.IDENTITY_API_URL ||
+  CONTROL_PLANE_BASE_URL;
+
+const authLoginUrl = `${IDENTITY_API_URL}/api/auth/login`;
+const authRegisterUrl = `${IDENTITY_API_URL}/api/auth/register`;
+
 const BPE_MARKETPLACE_OFFERS_URL =
     process.env.BPE_MARKETPLACE_OFFERS_URL ||
     `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
 
-const CONTROL_PLANE_TOKEN =
-    process.env.CONTROL_PLANE_TOKEN ||
-    process.env.PPOS_CONTROL_TOKEN ||
-    process.env.CONTROL_PLANE_API_KEY;
-
-const buildControlPlaneHeaders = () => {
-    const headers = {
-        "Content-Type": "application/json",
-        "x-source-app": "PrintPricePro_BookPrice"
-    };
-
-    if (CONTROL_PLANE_TOKEN) {
-        headers.Authorization = `Bearer ${CONTROL_PLANE_TOKEN}`;
-    }
-
-    return headers;
-};
+const buildControlPlaneHeaders = () => ({
+    "Authorization": `Bearer ${CONTROL_PLANE_API_KEY}`,
+    "Content-Type": "application/json",
+    "x-source-app": "PrintPricePro_BookPrice"
+});
 
 // ADAPTIVE VAULT (In-memory for v5.2 hardening)
 const carts = new Map();
@@ -222,40 +224,163 @@ const mapProductionFilesToOrderStatus = (productionFiles) => {
 
 // 🔐 SECURITY: Challenge Context
 app.post('/api/security/challenge', (req, res) => {
-    const payloadContext = req.body.payload_context || req.body.context;
+    const context = req.body?.payload_context || req.body?.context;
 
-    if (!payloadContext) {
-        return res.status(400).json({ error: "Payload context required." });
+    if (!context) {
+        return res.status(400).json({ error: "Challenge payload_context required." });
+    }
+
+    const sessionId =
+        req.signedCookies['pp_session_id'] ||
+        crypto.randomBytes(16).toString('hex');
+
+    if (!req.signedCookies['pp_session_id']) {
+        res.cookie('pp_session_id', sessionId, {
+            signed: true,
+            httpOnly: true,
+            sameSite: 'Lax',
+            secure: true,
+            maxAge: 24 * 60 * 60 * 1000
+        });
     }
 
     const nonce = crypto.randomBytes(16).toString('hex');
     const timestamp = Date.now();
-    const token = generateHmac({ context: payloadContext, nonce, timestamp });
+    const token = crypto
+        .createHmac('sha256', SIGNING_SECRET)
+        .update(`${sessionId}${nonce}${timestamp}${context}`)
+        .digest('hex');
 
-    res.json({ token, nonce, timestamp });
+    res.json({ success: true, token, nonce, timestamp });
 });
 
-// 🧠 AI PROXY
+// 🧠 AI CHAT PROXY — frontend contract -> Gemini contract
 app.post('/api/ai/chat', async (req, res) => {
-    if (!GEMINI_API_KEY) return res.status(500).json({ error: "AI Service not configured." });
+    if (!GEMINI_API_KEY) {
+        return res.status(500).json({ error: "AI Service not configured." });
+    }
+
+    const { system_prompt, messages, ui_state } = req.body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "messages array required." });
+    }
+
+    const systemText = `${system_prompt || ''}
+
+Current UI State (read-only context):
+${JSON.stringify(ui_state || {})}`;
+
+    const contents = messages.map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(m.content || '') }]
+    }));
+
+    const geminiPayload = {
+        system_instruction: {
+            parts: [{ text: systemText }]
+        },
+        contents,
+        generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2
+        }
+    };
 
     try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        
-        // Forwarding logic for Gemini
-        const response = await axios.post(geminiUrl, req.body, {
-            headers: { 'Content-Type': 'application/json' }
+        const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+        const response = await axios.post(geminiUrl, geminiPayload, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 30000
         });
 
-        res.json(response.data);
+        const text =
+            response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            parsed = {
+                reply: text || "I could not parse the assistant response.",
+                specs_patch: {}
+            };
+        }
+
+        res.json(parsed);
     } catch (err) {
-        console.error("[AI_PROXY_ERROR]", err.message);
-        res.status(err.response?.status || 500).json({ 
-            error: "AI Proxy failed.", 
-            details: err.response?.data || err.message 
+        console.error("[AI_PROXY_ERROR]", err.response?.data || err.message);
+        res.status(err.response?.status || 502).json({
+            error: "AI service unavailable.",
+            details: err.response?.data || err.message
         });
     }
 });
+
+// 🔐 AUTH LOGIN PROXY
+app.post('/api/auth/login',
+    rateLimit({ windowMs: 60000, max: 10 }),
+    [
+        body('email').isEmail().normalizeEmail(),
+        body('password').isLength({ min: 1 }),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ error: 'Invalid credentials format.' });
+        }
+
+        const { email, password } = req.body;
+
+        try {
+            const response = await axios.post(authLoginUrl, { email, password }, {
+                headers: buildControlPlaneHeaders(),
+                timeout: 10000,
+            });
+
+            res.status(response.status).json(response.data);
+        } catch (err) {
+            console.error('[AUTH_LOGIN_PROXY_ERROR]', err.response?.data || err.message);
+            res.status(err.response?.status || 502).json(
+                err.response?.data || { error: 'Auth service unavailable.' }
+            );
+        }
+    }
+);
+
+// 🔐 AUTH REGISTER PROXY
+app.post('/api/auth/register',
+    rateLimit({ windowMs: 60000, max: 5 }),
+    [
+        body('email').isEmail().normalizeEmail(),
+        body('password').isLength({ min: 1 }),
+        body('role').optional().isIn(['AUTHOR', 'PUBLISHER', 'PRINT_HOUSE', 'PRINTHOUSE', 'DEVELOPER']),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ error: 'Invalid registration data.' });
+        }
+
+        const { email, password, role } = req.body;
+
+        try {
+            const response = await axios.post(authRegisterUrl, { email, password, role }, {
+                headers: buildControlPlaneHeaders(),
+                timeout: 10000,
+            });
+
+            res.status(response.status).json(response.data);
+        } catch (err) {
+            console.error('[AUTH_REGISTER_PROXY_ERROR]', err.response?.data || err.message);
+            res.status(err.response?.status || 502).json(
+                err.response?.data || { error: 'Auth service unavailable.' }
+            );
+        }
+    }
+);
 
 // 📊 BPE PROXY: Budget Calculation
 app.post('/api/budget/calculate', [
