@@ -309,7 +309,17 @@ ${JSON.stringify(ui_state || {})}`;
             };
         }
 
-        res.json(parsed);
+        const normalized = {
+            ...parsed,
+            reply:
+                parsed.reply ||
+                parsed.response ||
+                parsed.text ||
+                parsed.message ||
+                ''
+        };
+
+        res.json(normalized);
     } catch (err) {
         console.error("[AI_PROXY_ERROR]", err.response?.data || err.message);
         res.status(err.response?.status || 502).json({
