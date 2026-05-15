@@ -21,14 +21,28 @@ const SIGNING_SECRET = process.env.SIGNING_SECRET;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // CONTROL PLANE / BPE CONFIG
-const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://localhost:4000";
-const CONTROL_PLANE_API_KEY = process.env.CONTROL_PLANE_API_KEY || "ppp_secret_api_key_v1";
+const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8081";
+const BPE_MARKETPLACE_OFFERS_URL =
+    process.env.BPE_MARKETPLACE_OFFERS_URL ||
+    `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
 
-const buildControlPlaneHeaders = () => ({
-    "Authorization": `Bearer ${CONTROL_PLANE_API_KEY}`,
-    "Content-Type": "application/json",
-    "x-source-app": "PrintPricePro_BookPrice"
-});
+const CONTROL_PLANE_TOKEN =
+    process.env.CONTROL_PLANE_TOKEN ||
+    process.env.PPOS_CONTROL_TOKEN ||
+    process.env.CONTROL_PLANE_API_KEY;
+
+const buildControlPlaneHeaders = () => {
+    const headers = {
+        "Content-Type": "application/json",
+        "x-source-app": "PrintPricePro_BookPrice"
+    };
+
+    if (CONTROL_PLANE_TOKEN) {
+        headers.Authorization = `Bearer ${CONTROL_PLANE_TOKEN}`;
+    }
+
+    return headers;
+};
 
 // ADAPTIVE VAULT (In-memory for v5.2 hardening)
 const carts = new Map();
@@ -208,14 +222,17 @@ const mapProductionFilesToOrderStatus = (productionFiles) => {
 
 // 🔐 SECURITY: Challenge Context
 app.post('/api/security/challenge', (req, res) => {
-    const { payload_context } = req.body;
-    if (!payload_context) return res.status(400).json({ error: "Payload context required." });
+    const payloadContext = req.body.payload_context || req.body.context;
+
+    if (!payloadContext) {
+        return res.status(400).json({ error: "Payload context required." });
+    }
 
     const nonce = crypto.randomBytes(16).toString('hex');
     const timestamp = Date.now();
-    const token = generateHmac({ context: payload_context, nonce, timestamp });
+    const token = generateHmac({ context: payloadContext, nonce, timestamp });
 
-    res.json({ success: true, token, nonce, timestamp });
+    res.json({ token, nonce, timestamp });
 });
 
 // 🧠 AI PROXY
@@ -256,7 +273,7 @@ app.post('/api/budget/calculate', [
 
     try {
         // In v5.2 this proxies to the actual BPE marketplace endpoint
-        const bpeUrl = `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
+        const bpeUrl = BPE_MARKETPLACE_OFFERS_URL;
         const headers = buildControlPlaneHeaders();
 
         console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${req.body.delivery_country}`);
