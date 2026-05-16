@@ -5,7 +5,9 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const crypto = require('crypto');
 const helmet = require('helmet');
-const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const expressRateLimit = require('express-rate-limit');
+const rateLimit = expressRateLimit.rateLimit || expressRateLimit;
+const nativeIpKeyGenerator = expressRateLimit.ipKeyGenerator;
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
@@ -259,23 +261,34 @@ app.use(express.json({
 })); // v5.3: Increased limit for rich payloads
 
 // Rate limiting (Phase 9 Hardening)
-const createLimiter = (max, windowMs = RATE_LIMIT_WINDOW_MS) => rateLimit({
-    windowMs,
-    max: RATE_LIMIT_ENABLED ? max : 1000000,
-    message: { error: "RATE_LIMITED", message: "Too many requests. Please try again shortly." },
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-        const sessionId =
-            req.signedCookies?.['pp_session_id'] ||
-            req.headers['x-session-id'] ||
-            req.body?.session_id ||
-            req.query?.session_id ||
-            'anon';
-
-        return `${ipKeyGenerator(req.ip)}_${sessionId}`;
+const createLimiter = (max, windowMs = RATE_LIMIT_WINDOW_MS) => {
+    if (!RATE_LIMIT_ENABLED) {
+        return (req, res, next) => next();
     }
-});
+
+    const options = {
+        windowMs,
+        max,
+        message: { error: "RATE_LIMITED", message: "Too many requests. Please try again shortly." },
+        standardHeaders: true,
+        legacyHeaders: false
+    };
+
+    if (typeof nativeIpKeyGenerator === 'function') {
+        options.keyGenerator = (req) => {
+            const sessionId =
+                req.signedCookies?.['pp_session_id'] ||
+                req.headers['x-session-id'] ||
+                req.body?.session_id ||
+                req.query?.session_id ||
+                'anon';
+
+            return `${nativeIpKeyGenerator(req.ip)}_${sessionId}`;
+        };
+    }
+
+    return rateLimit(options);
+};
 
 const apiLimiter = createLimiter(RATE_LIMIT_MAX_REQUESTS);
 const uploadLimiter = createLimiter(UPLOAD_RATE_LIMIT_MAX_REQUESTS);
