@@ -17,7 +17,8 @@ import {
   ExternalLink,
   Ban,
   Play,
-  Check
+  Check,
+  Search
 } from 'lucide-react';
 
 interface PrinthouseJobDetailProps {

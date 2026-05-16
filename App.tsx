@@ -5,6 +5,10 @@ import React, {
   useRef,
 } from 'react';
 
+import {
+  ExclamationTriangleIcon,
+} from '@heroicons/react/24/outline';
+
 // PDF.js (legacy build)
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 const { getDocument, GlobalWorkerOptions } = pdfjsLib;
@@ -183,7 +187,7 @@ const getOrCreateSessionId = () => {
 };
 
 // ==== Defensive Guard: Public Console Access ====
-const ENABLE_PUBLIC_CONSOLE = import.meta.env.VITE_ENABLE_PUBLIC_CONSOLE === 'true';
+const ENABLE_PUBLIC_CONSOLE = (import.meta as any).env.VITE_ENABLE_PUBLIC_CONSOLE === 'true';
 
 const INITIAL_BOOK_PRICE_PAYLOAD: InitialBookPricePayload = {
   // Basic info
@@ -683,7 +687,7 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('File validation error:', err);
     }
-  }, [addToast]);
+  }, [addToast, cart]);
 
   const handleProductionFileUrlSelect = useCallback(async (kind: ProductionFileKind, url: string) => {
     try {

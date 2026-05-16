@@ -60,6 +60,23 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
     fetchDetails();
   }, [orderIntentId]);
 
+  // Viewport Hardening (v5.3)
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    
+    // Prevent background scroll
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      document.body.style.overflow = originalStyle;
+    };
+  }, [onClose]);
+
   if (loading) {
     return (
       <div className="fixed inset-0 z-[70] flex items-center justify-center bg-corporate-secondary/80 backdrop-blur-md">
@@ -105,7 +122,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
 
   // Specs resolution with priority: payload > offer_snapshot > raw_specs
   const snapshot = intent.payload?.order_snapshot;
-  const rawSpecs = intent.offer.selected_offer_snapshot?.raw_offer_snapshot?.specs || intent.offer.selected_offer_snapshot?.specs || {};
+  const rawSpecs = intent.offer.selected_offer_snapshot?.raw_offer_snapshot?.specs || (intent.offer.selected_offer_snapshot as any)?.specs || {};
   
   const specs = {
     format: normalizeText(snapshot?.specs?.format || rawSpecs?.book_size || rawSpecs?.format, 'Custom'),
@@ -114,7 +131,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
     binding: normalizeBinding(snapshot?.specs?.binding_method || rawSpecs?.binding_method),
     printer: normalizeText(snapshot?.offer?.printer_name || intent.offer.selected_offer_snapshot?.printer_name, 'Unknown'),
     country: normalizeText(snapshot?.specs?.delivery_country || rawSpecs?.delivery_country, ''),
-    site: normalizeText(snapshot?.offer?.production_site || intent.offer.selected_offer_snapshot?.production_site || intent.offer.selected_offer_snapshot?.printer_name, 'Selected Printer')
+    site: normalizeText(snapshot?.offer?.production_site || (intent.offer.selected_offer_snapshot as any)?.production_site || intent.offer.selected_offer_snapshot?.printer_name, 'Selected Printer')
   };
 
   if (process.env.NODE_ENV === 'development') {
@@ -128,64 +145,76 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-corporate-secondary/90 backdrop-blur-xl p-4 md:p-8 overflow-y-auto">
-      <div className="relative w-full max-w-[1000px] bg-corporate-primary border border-white/10 shadow-[0_0_150px_rgba(0,0,0,0.6)] flex flex-col">
-        {/* Header Bar */}
-        <div className="h-[2px] w-full bg-corporate-accent" />
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-corporate-secondary/95 backdrop-blur-md p-0 md:p-6 animate-in fade-in duration-300">
+      <div className="relative w-full h-full md:h-auto md:max-h-[calc(100vh-48px)] max-w-[1180px] bg-corporate-primary border-0 md:border md:border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden">
         
-        {/* Navigation Bar (v5.3 Hardening) */}
-        <div className="flex items-center justify-between px-8 py-3 bg-corporate-secondary/50 border-b border-white/5">
-          <button 
-            onClick={() => {
-                if (onReset) onReset();
-                else onClose();
-            }}
-            className="flex items-center gap-2 text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted hover:text-corporate-accent transition-colors"
-          >
-            <ArrowLeftIcon className="w-3.5 h-3.5" />
-            Back to Marketplace
-          </button>
+        {/* Sticky Header (Always Visible) */}
+        <div className="sticky top-0 z-[80] shrink-0 flex flex-col bg-corporate-secondary border-b border-white/10 shadow-lg">
+            {/* Header Bar Line */}
+            <div className="h-[2px] w-full bg-corporate-accent" />
+            
+            {/* Navigation Bar */}
+            <div className="flex items-center justify-between px-5 md:px-8 py-3 md:py-4">
+                <button 
+                    onClick={() => {
+                        if (onReset) onReset();
+                        else onClose();
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-corporate-primary border border-white/5 text-[0.65rem] font-black uppercase tracking-widest text-corporate-text hover:bg-white/5 hover:border-corporate-accent/30 transition-all min-h-[40px]"
+                >
+                    <ArrowLeftIcon className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Back to Marketplace</span>
+                    <span className="sm:hidden">Back</span>
+                </button>
+                
+                <div className="flex flex-col items-center gap-0.5">
+                    <span className="text-[0.55rem] font-technical uppercase text-corporate-muted tracking-[0.2em]">Order Intent</span>
+                    <span className="text-[0.7rem] md:text-[0.8rem] font-mono font-bold text-corporate-accent tracking-tighter tabular-nums select-all">
+                        {intent.public_ref}
+                    </span>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="flex items-center gap-2 px-3 py-2 text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted hover:text-corporate-accent transition-colors min-h-[40px] border border-transparent hover:border-white/5"
+                    aria-label="Close modal"
+                >
+                    <span className="hidden sm:inline">Close</span>
+                    <XMarkIcon className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+
+        {/* Scrollable Body Content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
           
-          <div className="hidden md:flex items-center gap-3 px-4 py-1.5 bg-corporate-primary/50 border border-white/5">
-             <span className="text-[0.6rem] font-technical uppercase text-corporate-muted">Order Request</span>
-             <span className="text-[0.7rem] font-mono font-bold text-corporate-accent tracking-tighter">{intent.public_ref}</span>
-          </div>
-
-          <button 
-            onClick={onClose}
-            className="flex items-center gap-2 text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted hover:text-corporate-accent transition-colors"
-          >
-            Close
-            <XMarkIcon className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Top Header */}
-        <div className="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-corporate-elevated/30">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-corporate-secondary border border-white/10">
-              <ShoppingBagIcon className="w-6 h-6 text-corporate-accent" />
+          {/* Internal Top Header (Visual Context) */}
+          <div className="px-8 py-6 border-b border-white/5 bg-corporate-elevated/20 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                <div className="p-3 bg-corporate-secondary border border-white/10">
+                    <ShoppingBagIcon className="w-6 h-6 text-corporate-accent" />
+                </div>
+                <div>
+                    <h2 className="text-[1.1rem] font-black uppercase tracking-[0.2em] text-corporate-text">
+                        Order Details
+                    </h2>
+                    <p className="text-[0.65rem] font-mono text-corporate-muted uppercase">
+                        Ingestion ID: {intent.order_intent_id}
+                    </p>
+                </div>
             </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-[1.1rem] font-black uppercase tracking-[0.2em] text-corporate-text">
-                  Order Request
-                </h2>
-                <span className="px-2 py-0.5 bg-corporate-accent/10 border border-corporate-accent/20 text-[0.6rem] font-black text-corporate-accent uppercase tracking-widest">
-                  INTENT
-                </span>
-              </div>
-              <p className="text-[0.7rem] font-mono text-corporate-muted tracking-tight">
-                Ref: <span className="text-corporate-text-secondary">{intent.public_ref}</span> • ID: <span className="text-corporate-text-secondary">{intent.order_intent_id}</span>
-              </p>
+            
+            {/* Contextual Note */}
+            <div className="hidden lg:block bg-corporate-secondary border border-white/5 px-4 py-2">
+                <p className="text-[0.6rem] font-technical text-corporate-muted uppercase tracking-widest">
+                    Status: <span className="text-corporate-text font-black">{intent.status}</span>
+                </p>
             </div>
           </div>
-          {/* Removed the small X button here as we have the navigation bar */}
-        </div>
 
-        <div className="flex-1 p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Info Column */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className="p-5 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Main Info Column */}
+            <div className="lg:col-span-2 space-y-8">
             
             {/* Status Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -546,7 +575,8 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                         </div>
                     )}
                 </div>
-            </div>
+            </div> {/* End of Sidebar (289) */}
+          </div> {/* End of Grid (215) */}
 
             <div className="p-6 border border-white/5 bg-corporate-elevated/10">
                  <h4 className="text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted mb-4">
