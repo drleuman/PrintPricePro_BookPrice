@@ -18,7 +18,7 @@ const repositories = require('./repositories');
 (async () => {
     try {
         await repositories.initialize();
-        
+
         if (process.env.NODE_ENV === 'production' && repositories.adapter === 'json') {
             console.warn('[CONFIG_WARNING] JSON persistence is not recommended for production. Use PERSISTENCE_ADAPTER=mysql');
         }
@@ -46,15 +46,15 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // CONTROL PLANE / BPE CONFIG
 const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8081";
 const CONTROL_PLANE_API_KEY =
-  process.env.CONTROL_PLANE_API_KEY ||
-  process.env.CONTROL_PLANE_TOKEN ||
-  process.env.PPOS_CONTROL_TOKEN ||
-  "ppp_secret_api_key_v1";
+    process.env.CONTROL_PLANE_API_KEY ||
+    process.env.CONTROL_PLANE_TOKEN ||
+    process.env.PPOS_CONTROL_TOKEN ||
+    "ppp_secret_api_key_v1";
 
 const IDENTITY_API_URL =
-  process.env.CONTROL_PLANE_AUTH_URL ||
-  process.env.IDENTITY_API_URL ||
-  CONTROL_PLANE_BASE_URL;
+    process.env.CONTROL_PLANE_AUTH_URL ||
+    process.env.IDENTITY_API_URL ||
+    CONTROL_PLANE_BASE_URL;
 
 const authLoginUrl = `${IDENTITY_API_URL}/api/auth/login`;
 const authRegisterUrl = `${IDENTITY_API_URL}/api/auth/register`;
@@ -111,7 +111,7 @@ const CONTROL_PLANE_PRODUCTION_STATUS_ENDPOINT = process.env.CONTROL_PLANE_PRODU
 const NOTIFICATIONS_ENABLED = process.env.NOTIFICATIONS_ENABLED === 'true';
 const NOTIFICATION_PROVIDER = process.env.NOTIFICATION_PROVIDER || 'console'; // 'console' | 'smtp'
 const NOTIFICATION_FROM_EMAIL = process.env.NOTIFICATION_FROM_EMAIL || 'noreply@printpricepro.com';
-const PUBLIC_APP_BASE_URL = process.env.PUBLIC_APP_BASE_URL || 'http://localhost:5173';
+
 
 const SMTP_CONFIG = {
     host: process.env.SMTP_HOST,
@@ -272,11 +272,11 @@ const getOrCreateSessionId = (req, res) => {
  */
 const resolveRequestIdentity = (req) => {
     const sessionId = req.signedCookies['pp_session_id'];
-    
+
     // In a real app, we would verify JWT from Authorization header here
     const authHeader = req.headers.authorization;
     let authenticatedUser = null;
-    
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
         // TODO: Full JWT verification against Control Plane / Identity service
         // For now, we trust the session cookie for anonymous or use session vault for local auth
@@ -295,9 +295,9 @@ const resolveRequestIdentity = (req) => {
 const assertOrderIntentAccess = (req, intent) => {
     if (!intent) return false;
     const identity = resolveRequestIdentity(req);
-    
+
     if (identity.isAdmin) return true;
-    
+
     // Anonymous ownership check
     if (intent.session_id === identity.sessionId) {
         console.log(`[ACCESS_GRANTED] intent=${intent.order_intent_id} type=anonymous_session`);
@@ -370,7 +370,7 @@ const verifyDispatchToken = (token) => {
     try {
         const decoded = JSON.parse(Buffer.from(token, 'base64').toString('utf8'));
         const { p: payload, s: signature } = decoded;
-        
+
         const hmac = crypto.createHmac('sha256', DISPATCH_PACKAGE_TOKEN_SECRET);
         hmac.update(payload);
         if (hmac.digest('hex') !== signature) return null;
@@ -392,7 +392,7 @@ const verifyDispatchToken = (token) => {
  */
 const assertDispatchPackageAccess = async (req, pkg) => {
     if (!pkg) return false;
-    
+
     // 1. Admin/Operator bypass
     const identity = resolveRequestIdentity(req);
     if (identity.isAdmin) return true;
@@ -420,13 +420,13 @@ const validateUrlAgainstSsrf = (urlString) => {
     try {
         const url = new URL(urlString);
         if (url.protocol !== 'https:') return false;
-        
+
         const hostname = url.hostname.toLowerCase();
-        
+
         // 1. Reject localhost and loopback
         const localHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
         if (localHosts.includes(hostname)) return false;
-        
+
         // 2. Reject private IPv4 ranges
         // 10.x.x.x
         if (hostname.startsWith('10.')) return false;
@@ -434,10 +434,10 @@ const validateUrlAgainstSsrf = (urlString) => {
         if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)) return false;
         // 192.168.x.x
         if (hostname.startsWith('192.168.')) return false;
-        
+
         // 3. Reject link-local (169.254.x.x)
         if (hostname.startsWith('169.254.')) return false;
-        
+
         // 4. Reject .local hosts
         if (hostname.endsWith('.local')) return false;
 
@@ -487,11 +487,11 @@ const hasRequiredProductionFiles = (productionFiles) => {
     // v5.3: Checkout requires UPLOADED or VALIDATED.
     // status SELECTED is REJECTED.
     // status UPLOADED_WITH_WARNINGS is BLOCKED in Phase 2.
-    const isInteriorValid = isServerBackedProductionFile(interior) && !isServerWarningProductionFile(interior) || 
-                           isExternalLinkDeclared(interior);
+    const isInteriorValid = isServerBackedProductionFile(interior) && !isServerWarningProductionFile(interior) ||
+        isExternalLinkDeclared(interior);
 
-    const isCoverValid = isServerBackedProductionFile(cover) && !isServerWarningProductionFile(cover) || 
-                        isExternalLinkDeclared(cover);
+    const isCoverValid = isServerBackedProductionFile(cover) && !isServerWarningProductionFile(cover) ||
+        isExternalLinkDeclared(cover);
 
     return Boolean(
         productionFiles?.required === true &&
@@ -539,7 +539,7 @@ const normalizeProductionFilesWorkflowStatus = (productionFiles) => {
 const enrichProductionFilesMetadata = (productionFiles) => {
     const interior = productionFiles?.interior_pdf;
     const cover = productionFiles?.cover_spine_back_pdf;
-    
+
     const hasAnyLink = interior?.source_type === 'DOWNLOAD_URL' || cover?.source_type === 'DOWNLOAD_URL';
     const hasAnyUpload = interior?.source_type === 'UPLOAD' || cover?.source_type === 'UPLOAD';
 
@@ -584,7 +584,7 @@ const signOfferPayload = (payload) => {
         specHash,
         payload.expires_at
     ].join('|');
-    
+
     return crypto.createHmac('sha256', OFFER_SIGNING_SECRET).update(baseString).digest('hex');
 };
 
@@ -661,7 +661,7 @@ const checkPdfEof = (filePath) => {
         const fd = fs.openSync(filePath, 'r');
         fs.readSync(fd, buffer, 0, readSize, fileSize - readSize);
         fs.closeSync(fd);
-        
+
         return buffer.toString().includes('%%EOF');
     } catch (err) {
         console.error(`[VALIDATION_ERROR] Failed to check PDF EOF: ${err.message}`);
@@ -696,7 +696,7 @@ app.post('/api/production-files/upload', async (req, res) => {
         }
 
         const filePath = req.file.path;
-        
+
         // 0. Hygiene check
         if (!fs.existsSync(filePath)) {
             return res.status(400).json({ error: "UPLOAD_FILE_MISSING", message: "File was not found on server after upload." });
@@ -769,22 +769,22 @@ app.post('/api/production-files/upload', async (req, res) => {
                 created_at: createdAt
             };
 
-        try {
-            await repositories.productionFiles.create(record);
-            
-            await repositories.auditEvents.append({
-                entity_type: 'PRODUCTION_FILE',
-                entity_id: record.file_id,
-                event_type: 'UPLOAD_SUCCESS',
-                actor_id: identity.user_id,
-                session_id: identity.session_id,
-                ip: req.ip,
-                payload: { role: record.role, filename: record.filename }
-            });
-        } catch (dbErr) {
-            console.error(`[UPLOAD_DB_SAVE_FAILED] ${dbErr.message}`);
-            return res.status(500).json({ error: "UPLOAD_COMMIT_FAILED" });
-        }
+            try {
+                await repositories.productionFiles.create(record);
+
+                await repositories.auditEvents.append({
+                    entity_type: 'PRODUCTION_FILE',
+                    entity_id: record.file_id,
+                    event_type: 'UPLOAD_SUCCESS',
+                    actor_id: identity.user_id,
+                    session_id: identity.session_id,
+                    ip: req.ip,
+                    payload: { role: record.role, filename: record.filename }
+                });
+            } catch (dbErr) {
+                console.error(`[UPLOAD_DB_SAVE_FAILED] ${dbErr.message}`);
+                return res.status(500).json({ error: "UPLOAD_COMMIT_FAILED" });
+            }
 
             res.json({
                 ok: true,
@@ -796,7 +796,7 @@ app.post('/api/production-files/upload', async (req, res) => {
         } catch (processErr) {
             console.error(`[UPLOAD_PROCESS_ERROR] ${processErr.message}`);
             if (fs.existsSync(filePath)) {
-                try { fs.unlinkSync(filePath); } catch(e) { console.error(`[CLEANUP_FAILED] ${e.message}`); }
+                try { fs.unlinkSync(filePath); } catch (e) { console.error(`[CLEANUP_FAILED] ${e.message}`); }
             }
             res.status(500).json({ error: "INTERNAL_VALIDATION_ERROR", message: "Failed to process production file." });
         }
@@ -812,7 +812,7 @@ app.get('/api/production-files', async (req, res) => {
     }
 
     const files = await repositories.productionFiles.listByAssociation({ cart_id, session_id, order_ref, user_id });
-    
+
     // Ownership Filter
     const allowedFiles = [];
     for (const f of files) {
@@ -1019,18 +1019,18 @@ app.post('/api/budget/calculate', [
 
         console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${req.body.delivery_country}`);
         const response = await axios.post(bpeUrl, req.body, { headers, timeout: 10000 });
-        
+
         const bpeData = response.data;
         const offers = Array.isArray(bpeData.offers) ? bpeData.offers : [];
-        
+
         const offer_session_id = `ofs_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
         const expires_at = new Date(Date.now() + OFFER_SESSION_TTL_MINUTES * 60 * 1000).toISOString();
-        
+
         const normalizedOffers = offers.map(o => {
             const offer_id = `offer_${crypto.randomBytes(6).toString('hex')}`;
             const total_price = Number(o.total_price ?? o.total_cost ?? 0);
             const currency = o.currency || 'EUR';
-            
+
             const offerPayload = {
                 offer_id,
                 offer_session_id,
@@ -1047,7 +1047,7 @@ app.post('/api/budget/calculate', [
             };
 
             const signature = signOfferPayload({ ...offerPayload, specs: req.body });
-            
+
             return {
                 ...offerPayload,
                 signature
@@ -1073,7 +1073,7 @@ app.post('/api/budget/calculate', [
                 ...rest,
                 // Don't leak raw snapshot or signature to frontend if not needed, 
                 // but requirements say signature optional on frontend.
-                signature 
+                signature
             })),
             recommended_offer_id: bpeData.recommended_offer_id
         });
@@ -1100,9 +1100,9 @@ app.post('/api/cart/add', async (req, res) => {
             return res.status(404).json({ error: "OFFER_SESSION_NOT_FOUND", message: "The pricing session was not found." });
         }
         if (isOfferSessionExpired(session)) {
-            return res.status(400).json({ 
-                error: "OFFER_SESSION_EXPIRED", 
-                message: "This pricing offer has expired. Please recalculate your book price." 
+            return res.status(400).json({
+                error: "OFFER_SESSION_EXPIRED",
+                message: "This pricing offer has expired. Please recalculate your book price."
             });
         }
 
@@ -1147,7 +1147,7 @@ app.post('/api/cart/add', async (req, res) => {
         console.warn(`[CART_ADD_LEGACY_PAYLOAD_ACCEPTED_DEV] session=${sessionId}`);
         // ... (preserving some legacy logic if needed, but requirements say reject in prod)
         if (!legacySpecs || !legacyOffer) {
-             return res.status(400).json({ error: 'offer_session_id and offer_id are required.' });
+            return res.status(400).json({ error: 'offer_session_id and offer_id are required.' });
         }
     } else {
         console.error(`[CART_ADD_LEGACY_PAYLOAD_REJECTED] session=${sessionId}`);
@@ -1270,9 +1270,9 @@ app.post('/api/cart/checkout', async (req, res) => {
             const session = await repositories.offerSessions.getById(offer_session_id);
             if (!session || isOfferSessionExpired(session)) {
                 console.warn(`[CHECKOUT_OFFER_REJECTED] Session expired or missing. ofs=${offer_session_id}`);
-                return res.status(400).json({ 
-                    error: "OFFER_SESSION_EXPIRED", 
-                    message: "One or more offers in your cart have expired. Please recalculate pricing." 
+                return res.status(400).json({
+                    error: "OFFER_SESSION_EXPIRED",
+                    message: "One or more offers in your cart have expired. Please recalculate pricing."
                 });
             }
 
@@ -1286,7 +1286,7 @@ app.post('/api/cart/checkout', async (req, res) => {
 
             const order_ref = `app_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
             const source_ref = `ppp_app_checkout_${Date.now()}`;
-            
+
             /** @type {import('../types').ControlPlaneOrderPayload} */
             const payload = {
                 source: "PRINTPRICE_APP",
@@ -1343,14 +1343,14 @@ app.post('/api/cart/checkout', async (req, res) => {
 
             const response = await axios.post(controlPlaneOrdersUrl, payload, { headers, timeout: 15000 });
             createdOrders.push(response.data.order || response.data);
-            
+
             // Mark as selected in session registry
             await repositories.offerSessions.markSelectedOffer(offer_session_id, offer_id);
         }
 
         // Clear cart after successful checkout
         carts.set(sessionId, []);
-        
+
         const firstOrder = createdOrders[0] || {};
         const firstRef = firstOrder.order_ref || firstOrder.orderRef || null;
 
@@ -1358,8 +1358,8 @@ app.post('/api/cart/checkout', async (req, res) => {
         await repositories.productionFiles.updateAssociation(interiorId, { order_ref: firstRef });
         await repositories.productionFiles.updateAssociation(coverId, { order_ref: firstRef });
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             order_ref: firstRef,
             orders: createdOrders,
             payment_url: null, // v5.3: Blocked until validation
@@ -1377,10 +1377,10 @@ app.post('/api/cart/checkout', async (req, res) => {
 app.post('/api/order-intents', async (req, res) => {
     console.log(`[ORDER_INTENT_CREATE_REQUEST]`);
     const sessionId = getOrCreateSessionId(req, res);
-    const { 
-        offer_session_id, 
-        offer_id, 
-        production_files, 
+    const {
+        offer_session_id,
+        offer_id,
+        production_files,
         customer,
         cart_id
     } = req.body;
@@ -1423,7 +1423,7 @@ app.post('/api/order-intents', async (req, res) => {
     // 3. Create Order Intent
     const order_intent_id = `oi_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const public_ref = `PPOS-OI-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-    
+
     const intentRecord = {
         order_intent_id,
         public_ref,
@@ -1501,7 +1501,7 @@ app.post('/api/order-intents', async (req, res) => {
 app.get('/api/order-intents/:id', async (req, res) => {
     const intent = await repositories.orderIntents.getById(req.params.id);
     if (!intent) return res.status(404).json({ error: "NOT_FOUND" });
-    
+
     if (!assertOrderIntentAccess(req, intent)) {
         return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
     }
@@ -1545,12 +1545,12 @@ app.get('/api/order-intents', async (req, res) => {
 app.get('/api/orders', async (req, res) => {
     const identity = resolveRequestIdentity(req);
     const sessionId = identity.sessionId || getOrCreateSessionId(req, res);
-    
+
     const intents = await repositories.orderIntents.listBySession(sessionId);
-    
+
     // Ownership check (redundant but safe)
     const allowedIntents = intents.filter(i => assertOrderIntentAccess(req, i));
-    
+
     res.json({
         success: true,
         orders: allowedIntents.map(i => ({
@@ -1576,7 +1576,7 @@ app.get('/api/orders', async (req, res) => {
 const createPreflightJobForFile = async (orderIntent, fileRecord) => {
     const { order_intent_id, public_ref } = orderIntent;
     const { file_id, role, storage } = fileRecord;
-    
+
     console.log(`[PREFLIGHT_JOB_CREATE_REQUEST] intent=${order_intent_id} role=${role} file=${file_id}`);
 
     if (!PREFLIGHT_ENABLED) {
@@ -1612,7 +1612,7 @@ const createPreflightJobForFile = async (orderIntent, fileRecord) => {
 
         const jobData = response.data.job || response.data;
         console.log(`[PREFLIGHT_JOB_CREATED] intent=${order_intent_id} role=${role} job_id=${jobData.jobId || jobData.id}`);
-        
+
         return {
             role,
             file_id,
@@ -1681,9 +1681,9 @@ app.post('/api/order-intents/:id/preflight/start', async (req, res) => {
         await repositories.orderIntents.updateStatus(orderIntentId, intent.status, { preflight_status: "NOT_CONFIGURED" });
         await repositories.orderIntents.update(orderIntentId, { preflight: { status: "NOT_CONFIGURED", jobs: [] } });
         console.warn(`[PREFLIGHT_NOT_CONFIGURED] intent=${orderIntentId}`);
-        return res.status(400).json({ 
-            error: "PREFLIGHT_NOT_CONFIGURED", 
-            message: "Preflight validation is not enabled in this environment." 
+        return res.status(400).json({
+            error: "PREFLIGHT_NOT_CONFIGURED",
+            message: "Preflight validation is not enabled in this environment."
         });
     }
 
@@ -1717,7 +1717,7 @@ app.post('/api/order-intents/:id/preflight/start', async (req, res) => {
     const [iJob, cJob] = await Promise.all([interiorJobPromise, coverJobPromise]);
 
     preflightState.jobs = [iJob, cJob];
-    
+
     // Determine overall status
     if (iJob.status === 'ERROR' || cJob.status === 'ERROR') {
         preflightState.status = (iJob.status === 'ERROR' && cJob.status === 'ERROR') ? 'ERROR' : 'PARTIAL';
@@ -1726,7 +1726,7 @@ app.post('/api/order-intents/:id/preflight/start', async (req, res) => {
     }
 
     await repositories.orderIntents.update(orderIntentId, { preflight: preflightState });
-    
+
     res.json({
         ok: true,
         order_intent_id: orderIntentId,
@@ -1760,7 +1760,7 @@ app.get('/api/order-intents/:id/preflight', async (req, res) => {
                 currentPreflight.jobs[i] = { ...job, ...freshStatus };
                 anyChanged = true;
                 console.log(`[PREFLIGHT_JOB_STATUS_UPDATED] job=${job.job_id} status=${freshStatus.status}`);
-                
+
                 // If passed, update production file registry
                 if (freshStatus.status === 'PASSED') {
                     await repositories.productionFiles.updateStatus(job.file_id, 'VALIDATED', { preflight_job_id: job.job_id });
@@ -1771,7 +1771,7 @@ app.get('/api/order-intents/:id/preflight', async (req, res) => {
 
     if (anyChanged) {
         currentPreflight.last_checked_at = new Date().toISOString();
-        
+
         // Compute overall status
         const allStatuses = currentPreflight.jobs.map(j => j.status);
         if (allStatuses.every(s => s === 'PASSED')) {
@@ -1785,7 +1785,7 @@ app.get('/api/order-intents/:id/preflight', async (req, res) => {
             currentPreflight.completed_at = new Date().toISOString();
             await repositories.orderIntents.updateStatus(orderIntentId, "PREFLIGHT_FAILED", { preflight_status: "FAILED" });
             console.log(`[PREFLIGHT_ORDER_INTENT_FAILED] intent=${orderIntentId}`);
-            
+
             // v5.3: Trigger Exception (Phase 14)
             await openOrderIntentException(intent, {
                 status: "CUSTOMER_REUPLOAD_REQUIRED",
@@ -1921,7 +1921,7 @@ app.post('/api/order-intents/:id/billing/create', async (req, res) => {
 
     const invoice_id = `inv_${crypto.randomUUID()}`;
     const invoice_number = `${BANK_TRANSFER_REFERENCE_PREFIX}-INV-${shortDate}-${randomSuffix}`;
-    
+
     const newInvoice = {
         invoice_id,
         invoice_number,
@@ -1974,7 +1974,7 @@ app.post('/api/order-intents/:id/billing/create', async (req, res) => {
 
             await repositories.orderIntents.update(intent.order_intent_id, intent);
             console.log(`[BILLING_INVOICE_CREATED] id=${order_intent_id} inv=${invoice_number}`);
-            
+
             // v5.3: Trigger Notification (Phase 13)
             sendOrderNotification(intent, 'BILLING_CREATED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
 
@@ -2023,7 +2023,7 @@ app.get('/api/order-intents/:id/payment', async (req, res) => {
  */
 app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
-    
+
     let event;
 
     try {
@@ -2042,7 +2042,7 @@ app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' 
             case 'checkout.session.completed': {
                 const session = event.data.object;
                 const orderIntentId = session.metadata?.order_intent_id;
-                
+
                 if (!orderIntentId) {
                     console.warn(`[STRIPE_WEBHOOK_WARNING] No order_intent_id in session metadata: ${session.id}`);
                     break;
@@ -2060,9 +2060,9 @@ app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' 
                 intent.payment.stripe_event_id = event.id;
                 intent.lifecycle.payment_status = 'PAID';
                 intent.updated_at = new Date().toISOString();
-                
+
                 await repositories.orderIntents.update(orderIntentId, intent);
-                
+
                 // v5.3: Trigger Notification (Phase 13)
                 sendOrderNotification(intent, 'PAYMENT_CONFIRMED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
 
@@ -2209,7 +2209,7 @@ async function finalizeOrderIntent(orderIntentId) {
 
     // 4. Submit to Control Plane
     console.log(`[CONTROL_PLANE_ORDER_CREATE_REQUEST] id=${orderIntentId} url=${CONTROL_PLANE_BASE_URL}${CONTROL_PLANE_ORDER_ENDPOINT}`);
-    
+
     const payload = await buildControlPlaneOrderPayload(intent);
     const headers = {
         ...buildControlPlaneHeaders(),
@@ -2230,7 +2230,7 @@ async function finalizeOrderIntent(orderIntentId) {
         intent.control_plane.response = response.data;
         intent.control_plane.created_at = new Date().toISOString();
         intent.control_plane.updated_at = new Date().toISOString();
-        
+
         intent.lifecycle.control_plane_order_status = 'CREATED';
         intent.status = 'CONTROL_PLANE_ORDER_CREATED';
 
@@ -2275,8 +2275,8 @@ app.post('/api/order-intents/:id/finalize', async (req, res) => {
         res.json(result);
     } catch (err) {
         const status = err.message === 'NOT_FOUND' ? 404 : (['PAYMENT_NOT_CONFIRMED', 'PREFLIGHT_NOT_PASSED'].includes(err.message) ? 409 : 500);
-        res.status(status).json({ 
-            ok: false, 
+        res.status(status).json({
+            ok: false,
             error: err.message,
             message: err.message === 'CONTROL_PLANE_HANDOFF_NOT_CONFIGURED' ? "Control Plane order handoff is disabled." : err.message
         });
@@ -2291,7 +2291,7 @@ app.post('/api/order-intents/:id/finalize', async (req, res) => {
 async function buildDispatchPackage(intent) {
     const packageId = `dp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const expiresAt = new Date(Date.now() + DISPATCH_PACKAGE_TTL_HOURS * 3600000).toISOString();
-    
+
     // Resolve all files from registry
     const files = await Promise.all(intent.production_files.files.map(async f => {
         const regFile = await repositories.productionFiles.getById(f.file_id);
@@ -2398,7 +2398,7 @@ async function buildCustomerTrackingView(intent, dispatchPkg = null) {
         status = 'ACTION_REQUIRED';
         headline = 'Attention Required';
         description = intent.exception.customer_message || "We encountered an issue processing your order.";
-        
+
         if (intent.exception.status === 'CUSTOMER_REUPLOAD_REQUIRED') {
             next_action = 'Please re-upload your production files to resolve technical issues.';
         } else if (intent.exception.status === 'PRINTHOUSE_REJECTED') {
@@ -2406,7 +2406,7 @@ async function buildCustomerTrackingView(intent, dispatchPkg = null) {
         } else {
             next_action = 'Our team is reviewing your order details.';
         }
-    } 
+    }
     // ---- Standard Status Flow ----
     else if (intent.status === 'CANCELLED') {
         status = 'CANCELLED';
@@ -2488,7 +2488,7 @@ async function buildCustomerTrackingView(intent, dispatchPkg = null) {
     };
 
     addStep('CREATED', 'Order Created', 'DONE', intent.created_at, 'Marketplace intent recorded.');
-    
+
     const filesStatus = (intent.lifecycle?.preflight_status === 'PASSED') ? 'DONE' : (intent.production_files?.interior_pdf_file_id ? 'CURRENT' : 'PENDING');
     addStep('FILES', 'Files Validated', filesStatus, intent.preflight?.completed_at, 'PDF production readiness check.');
 
@@ -2628,7 +2628,7 @@ async function sendOrderNotification(intent, eventType, context = {}) {
         }
 
         console.log(`[NOTIFICATION_SENT] id=${notificationId} event=${eventType}`);
-        
+
         await repositories.auditEvents.append({
             entity_type: 'NOTIFICATION',
             entity_id: notificationId,
@@ -2796,7 +2796,7 @@ app.get('/api/dispatch-packages/:packageId/files/:fileId', async (req, res) => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${fileMeta.filename}"`);
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        
+
         fs.createReadStream(filePath).pipe(res);
 
     } catch (err) {
@@ -2814,7 +2814,7 @@ app.post('/api/dispatch-packages/:packageId/revoke', adminOnly, async (req, res)
         if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
         await repositories.dispatchPackages.updateStatus(pkg.package_id, 'REVOKED');
-        
+
         await repositories.auditEvents.append({
             entity_type: 'DISPATCH_PACKAGE',
             entity_id: pkg.package_id,
@@ -2852,7 +2852,7 @@ app.get('/api/printhouse/queue', async (req, res) => {
         // For now, we allow filtering if identity.isAdmin or if a token is used.
 
         const jobs = await repositories.dispatchPackages.listByPrinthouse(printhouse_id, { status, limit, offset });
-        
+
         // Map to summary format
         const summary = jobs.map(j => ({
             package_id: j.package_id,
@@ -2911,7 +2911,7 @@ app.get('/api/printhouse/queue/:packageId', async (req, res) => {
         });
 
         console.log(`[PRINTHOUSE_JOB_DETAIL] id=${pkg.package_id}`);
-        
+
         // Return full metadata but exclude secrets
         const { access, ...job } = pkg;
         res.json({ ok: true, job });
@@ -2953,7 +2953,7 @@ app.post('/api/printhouse/queue/:packageId/status', async (req, res) => {
         };
 
         const allowed = validTransitions[currentStatus] || [];
-        
+
         // Admin can override some things, but mostly we follow the rules
         if (!allowed.includes(requestedStatus) && !identity.isAdmin) {
             console.warn(`[PRINTHOUSE_STATUS_REJECTED_INVALID_TRANSITION] id=${pkg.package_id} from=${currentStatus} to=${requestedStatus}`);
@@ -2988,7 +2988,7 @@ app.post('/api/printhouse/queue/:packageId/status', async (req, res) => {
         if (requestedStatus === 'IN_PRODUCTION') updatedQueue.started_production_at = now;
         if (requestedStatus === 'COMPLETED') updatedQueue.completed_at = now;
         if (requestedStatus === 'SHIPPED') updatedQueue.shipped_at = now;
-        
+
         if (rejection_reason) updatedQueue.rejection_reason = rejection_reason;
 
         // 4. Persistence
@@ -3098,7 +3098,7 @@ app.post('/api/order-intents/:id/payment/mark-paid', adminOnly, async (req, res)
     intent.lifecycle.payment_status = 'PAID';
     intent.updated_at = new Date().toISOString();
     await repositories.orderIntents.update(intent.order_intent_id, intent);
-    
+
     console.log(`[PAYMENT_MARK_PAID_ACCEPTED] id=${intent.order_intent_id}`);
 
     if (AUTO_FINALIZE_AFTER_PAYMENT) {
@@ -3124,13 +3124,13 @@ app.post('/api/order-intents/:id/payment/mark-paid', adminOnly, async (req, res)
 async function cleanupOrphanProductionFiles() {
     console.log(`[CLEANUP_ORPHAN_FILES_STARTED] retention=${PRODUCTION_FILE_RETENTION_HOURS}h`);
     const cutoff = new Date(Date.now() - (PRODUCTION_FILE_RETENTION_HOURS * 60 * 60 * 1000));
-    
+
     const orphans = await repositories.productionFiles.findOrphans(cutoff);
     let count = 0;
 
     for (const file of orphans) {
         console.log(`[CLEANUP_ORPHAN_FILE] id=${file.file_id}`);
-        
+
         // Delete local file if it exists and is on disk
         if (file.storage?.key) {
             const filePath = path.join(PRODUCTION_FILES_DIR, file.storage.key);
@@ -3144,7 +3144,7 @@ async function cleanupOrphanProductionFiles() {
         }
 
         await repositories.productionFiles.markDeleted(file.file_id, 'ORPHAN_RETENTION_EXPIRED');
-        
+
         await repositories.auditEvents.append({
             entity_type: 'PRODUCTION_FILE',
             entity_id: file.file_id,
@@ -3166,13 +3166,13 @@ async function cleanupOrphanProductionFiles() {
 async function cleanupAbandonedOrderIntents() {
     console.log(`[CLEANUP_ORDER_INTENTS_STARTED] retention=${ORDER_INTENT_RETENTION_DAYS}d`);
     const cutoff = new Date(Date.now() - (ORDER_INTENT_RETENTION_DAYS * 24 * 60 * 60 * 1000));
-    
+
     const abandoned = await repositories.orderIntents.findAbandoned(cutoff);
     let count = 0;
 
     for (const intent of abandoned) {
         console.log(`[CLEANUP_ABANDONED_INTENT] id=${intent.order_intent_id}`);
-        
+
         await repositories.orderIntents.updateStatus(intent.order_intent_id, 'CANCELLED', {
             final_order_status: 'FAILED',
             cancellation_reason: 'ABANDONED_RETENTION_EXPIRED'
@@ -3264,14 +3264,14 @@ app.get('/api/admin/health/persistence', adminOnly, async (req, res) => {
     }
 });
 
-// ---- Exception Orchestration (v5.3 - Phase 14) ----
+// ---- Exception Orchestration (v5.3 - Phase 14 partial / pending certification) ----
 
 /**
  * Opens or updates an exception for an Order Intent.
  */
 async function openOrderIntentException(orderIntent, params) {
-    const { 
-        status, reason_code, reason_message, customer_message, 
+    const {
+        status, reason_code, reason_message, customer_message,
         operator_notes, source, blocking = true, actor_id = 'SYSTEM'
     } = params;
 
@@ -3290,7 +3290,7 @@ async function openOrderIntentException(orderIntent, params) {
     };
 
     console.log(`[EXCEPTION_OPENED] intent=${orderIntent.order_intent_id} status=${status} source=${source} blocking=${blocking}`);
-    
+
     await repositories.orderIntents.update(orderIntent.order_intent_id, { exception });
 
     await repositories.auditEvents.append({
@@ -3370,7 +3370,7 @@ app.post('/api/order-intents/:id/files/:role/replace', upload.single('file'), as
         const allowedStatuses = ['CUSTOMER_REUPLOAD_REQUIRED', 'ACTION_REQUIRED', 'OPERATOR_REVIEW_REQUIRED'];
         if (!intent.exception || !allowedStatuses.includes(intent.exception.status)) {
             if (!isAdmin) {
-                 return res.status(400).json({ ok: false, error: "REPLACEMENT_NOT_ALLOWED_NOW" });
+                return res.status(400).json({ ok: false, error: "REPLACEMENT_NOT_ALLOWED_NOW" });
             }
         }
 
@@ -3387,15 +3387,15 @@ app.post('/api/order-intents/:id/files/:role/replace', upload.single('file'), as
         // 1. Validate Upload (Existing logic)
         const validationResult = await performHardenedPDFValidation(req.file.path, role);
         if (!validationResult.ok) {
-             // Cleanup failed upload
-             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-             return res.status(400).json({ ok: false, error: "VALIDATION_FAILED", details: validationResult });
+            // Cleanup failed upload
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ ok: false, error: "VALIDATION_FAILED", details: validationResult });
         }
 
         // 2. Register New Production File
         const oldFileId = intent.production_files?.[role === 'INTERIOR_PDF' ? 'interior_pdf_file_id' : 'cover_pdf_file_id'];
         const newFileId = `pf_repl_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-        
+
         const newFile = {
             file_id: newFileId,
             role,
@@ -3516,7 +3516,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
             if (intent.status === 'SHIPPED') {
                 return res.status(400).json({ ok: false, error: "CANNOT_CANCEL_SHIPPED_ORDER" });
             }
-            await repositories.orderIntents.update(intent.order_intent_id, { 
+            await repositories.orderIntents.update(intent.order_intent_id, {
                 status: 'CANCELLED',
                 cancelled_at: new Date().toISOString(),
                 cancellation_reason: operator_notes
@@ -3527,7 +3527,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
                 resolved_by: identity.user_id
             });
         } else if (action === 'REQUEST_ALTERNATE_PRINTER') {
-             await openOrderIntentException(intent, {
+            await openOrderIntentException(intent, {
                 status: "ALTERNATE_PRINTER_REQUIRED",
                 reason_code: "PRINTHOUSE_REJECTION_RECOVERY",
                 reason_message: "Operator initiated alternate printer search.",
@@ -3599,7 +3599,7 @@ app.get('/api/orders/:id/tracking', async (req, res) => {
 
         const tracking = await buildCustomerTrackingView(intent, dispatchPkg);
         console.log(`[TRACKING_VIEW_CREATED] id=${intent.order_intent_id} ref=${intent.public_ref} status=${tracking.customer_status}`);
-        
+
         res.json({ ok: true, tracking });
     } catch (err) {
         console.error(`[TRACKING_VIEW_FAILED] id=${req.params.id} error=${err.message}`);
@@ -3618,8 +3618,8 @@ app.get('/api/orders/ref/:publicRef/tracking', async (req, res) => {
 
         // Security: Require session or auth context (no unauthenticated guessing)
         if (!assertOrderIntentAccess(req, intent)) {
-             console.log(`[TRACKING_VIEW_ACCESS_DENIED] ref=${req.params.publicRef} session=${req.sessionID}`);
-             return res.status(403).json({ ok: false, error: "FORBIDDEN_TRACKING_ACCESS" });
+            console.log(`[TRACKING_VIEW_ACCESS_DENIED] ref=${req.params.publicRef} session=${req.sessionID}`);
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_TRACKING_ACCESS" });
         }
 
         let dispatchPkg = null;
