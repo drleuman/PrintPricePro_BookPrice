@@ -11,6 +11,7 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "axios": "^1.13.5",
+    "lucide-react": "^0.474.0",
     "minimatch": "^10.2.3",
     "pdfjs-dist": "^5.4.394",
     "qs": "^6.15.0",

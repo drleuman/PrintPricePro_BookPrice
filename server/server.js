@@ -179,19 +179,31 @@ if (process.env.NODE_ENV === 'production' && (!process.env.OFFER_SIGNING_SECRET 
     // In a real prod environment we might exit(1), but here we follow user requirements to log warning.
 }
 
-if (!fs.existsSync(PRODUCTION_FILES_DIR)) {
-    fs.mkdirSync(PRODUCTION_FILES_DIR, { recursive: true });
-    console.log(`[STORAGE] Created production files directory: ${PRODUCTION_FILES_DIR}`);
-}
+// Ensure storage directories exist (v5.3: Defensive check for production permissions)
+const ensureDirSync = (dirPath, required = false) => {
+    try {
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+            console.log(`[STORAGE] Created directory: ${dirPath}`);
+        }
+    } catch (err) {
+        if (required) {
+            console.error(`[STORAGE_ERROR] Failed to create REQUIRED directory ${dirPath}: ${err.message}`);
+        } else {
+            console.warn(`[STORAGE_WARNING] Could not create optional directory ${dirPath}: ${err.message}`);
+        }
+    }
+};
 
-if (!fs.existsSync(OFFER_SESSIONS_DIR)) {
-    fs.mkdirSync(OFFER_SESSIONS_DIR, { recursive: true });
-    console.log(`[STORAGE] Created offer sessions directory: ${OFFER_SESSIONS_DIR}`);
-}
+// Always ensure production files directory exists (needed for physical PDF storage)
+ensureDirSync(PRODUCTION_FILES_DIR, true);
 
-if (!fs.existsSync(ORDER_INTENTS_DIR)) {
-    fs.mkdirSync(ORDER_INTENTS_DIR, { recursive: true });
-    console.log(`[STORAGE] Created order intents directory: ${ORDER_INTENTS_DIR}`);
+// Only create JSON registry directories if not using MySQL persistence
+if (process.env.PERSISTENCE_ADAPTER !== 'mysql') {
+    ensureDirSync(OFFER_SESSIONS_DIR);
+    ensureDirSync(ORDER_INTENTS_DIR);
+} else {
+    console.log('[STORAGE] Skipping JSON registry directory creation (MySQL mode active)');
 }
 
 const storage = multer.diskStorage({
