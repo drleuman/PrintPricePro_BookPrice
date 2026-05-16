@@ -1069,6 +1069,11 @@ app.post('/api/budget/calculate', [
     body('interior_pages').isInt({ min: 0 }),
     body('delivery_country').isString().isLength({ min: 2, max: 2 })
 ], async (req, res) => {
+    console.log("[BUDGET_CALCULATE_HIT]", {
+        timestamp: new Date().toISOString(),
+        body: req.body
+    });
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
@@ -1140,8 +1145,20 @@ app.post('/api/budget/calculate', [
             recommended_offer_id: bpeData.recommended_offer_id
         });
     } catch (err) {
-        console.error("[BPE_PROXY_ERROR]", err.message);
-        res.status(502).json({ error: "Failed to fetch quotes from Book Price Engine." });
+        console.error("[BPE_PROXY_ERROR_DETAILED]", {
+            message: err.message,
+            stack: err.stack,
+            upstream_status: err.response?.status,
+            upstream_data: err.response?.data,
+            url: BPE_MARKETPLACE_OFFERS_URL
+        });
+
+        res.status(502).json({
+            error: "Failed to fetch quotes from Book Price Engine.",
+            detail: err.message,
+            upstream_status: err.response?.status || null,
+            upstream_error: err.response?.data || null
+        });
     }
 });
 
