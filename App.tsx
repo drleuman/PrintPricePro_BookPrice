@@ -182,6 +182,9 @@ const getOrCreateSessionId = () => {
   return sid;
 };
 
+// ==== Defensive Guard: Public Console Access ====
+const ENABLE_PUBLIC_CONSOLE = import.meta.env.VITE_ENABLE_PUBLIC_CONSOLE === 'true';
+
 const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'marketplace' | 'printhouse'>('marketplace');
@@ -342,10 +345,12 @@ const App: React.FC = () => {
       console.warn('Failed to configure PDF.js worker source', e);
     }
 
-    // Check for admin param
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true') {
-      setIsAdmin(true);
+    // Check for admin param (Only if explicitly enabled via environment guard)
+    if (ENABLE_PUBLIC_CONSOLE) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('admin') === 'true') {
+        setIsAdmin(true);
+      }
     }
   }, []);
 
@@ -786,13 +791,20 @@ const App: React.FC = () => {
         margin_percent: offer.margin_percent || 0,
       };
 
+      const offer_session_id = offer.offer_session_id || offers?.offer_session_id;
+      const offer_id = offer.offer_id || offer.id;
+
+      if (!offer_session_id || !offer_id) {
+          throw new Error('Missing offer session or offer id. Please recalculate.');
+      }
+
       const response = await fetch('/api/cart/add', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          offer_session_id: offer.offer_session_id || offers?.offer_session_id,
-          offer_id: offer.offer_id || offer.id,
+          offer_session_id,
+          offer_id,
           // Legacy fields preserved for dev-mode logging but backend should ignore in prod
           specs,
           offer: {
@@ -1057,7 +1069,7 @@ const App: React.FC = () => {
         onOpenAuthModal={() => setAuthModalOpen(true)}
         onLogout={() => setUser(null)}
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={ENABLE_PUBLIC_CONSOLE ? setCurrentView : undefined}
       />
 
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
@@ -1191,7 +1203,7 @@ const App: React.FC = () => {
           </>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <PrinthouseQueue />
+             {ENABLE_PUBLIC_CONSOLE ? <PrinthouseQueue /> : <div className="p-12 text-center text-corporate-muted uppercase font-technical text-xs tracking-widest">Access Denied</div>}
           </div>
         )}
       </main>

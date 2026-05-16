@@ -628,6 +628,27 @@ const mapProductionFilesToOrderStatus = (productionFiles) => {
 
 // ---- Offer Session Signing Helpers (v5.3 - Phase 4 Business Logic) ----
 
+
+function normalizeSignatureDate(value) {
+    if (!value) return '';
+    if (value instanceof Date) return value.toISOString();
+
+    const s = String(value);
+
+    // already ISO-like
+    if (s.includes('T') && s.endsWith('Z')) return s;
+
+    // MySQL DATETIME fallback: "YYYY-MM-DD HH:mm:ss"
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) {
+        return new Date(s.replace(' ', 'T') + 'Z').toISOString();
+    }
+
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+
+    return s;
+}
+
 const signOfferPayload = (payload) => {
     // Stable fields for signature: session_id, offer_id, printer_id, total_price, currency, spec_hash, expires_at
     const specHash = crypto.createHash('sha256').update(JSON.stringify(payload.specs || {})).digest('hex');
@@ -638,7 +659,7 @@ const signOfferPayload = (payload) => {
         payload.total_price,
         payload.currency,
         specHash,
-        payload.expires_at
+        normalizeSignatureDate(payload.expires_at)
     ].join('|');
 
     return crypto.createHmac('sha256', OFFER_SIGNING_SECRET).update(baseString).digest('hex');
@@ -660,14 +681,43 @@ const isOfferSessionExpired = (session) => {
 
 const getOfferFromSession = async (offer_session_id, offer_id) => {
     const session = await repositories.offerSessions.getById(offer_session_id);
-    if (!session || isOfferSessionExpired(session)) return null;
-    const offer = session.offers.find(o => o.offer_id === offer_id);
-    if (offer) {
-        // Verify internal integrity of the registry record
-        if (!verifyOfferSignature({ ...offer, specs: session.normalized_specs, offer_session_id: session.offer_session_id, expires_at: session.expires_at }, offer.signature)) {
-            return null;
-        }
+    if (!session) {
+        console.warn(`[OFFER_RESOLVE_FAILED] session_not_found id=${offer_session_id}`);
+        return null;
     }
+    
+    if (isOfferSessionExpired(session)) {
+        console.warn(`[OFFER_RESOLVE_FAILED] session_expired id=${offer_session_id} expires_at=${session.expires_at}`);
+        return null;
+    }
+
+    const offer = session.offers.find(o => String(o.offer_id) === String(offer_id));
+    if (!offer) {
+        console.warn(`[OFFER_RESOLVE_FAILED] offer_not_in_session offer_id=${offer_id} session_id=${offer_session_id} available=${session.offers?.map(o => o.offer_id).join(',')}`);
+        return null;
+    }
+
+    // Verify internal integrity of the registry record
+    const signaturePayload = {
+        ...offer,
+        specs: session.normalized_specs,
+        offer_session_id: offer.offer_session_id || session.offer_session_id,
+        expires_at: offer.expires_at || session.expires_at
+    };
+
+    if (!verifyOfferSignature(signaturePayload, offer.signature)) {
+        console.error('[OFFER_RESOLVE_FAILED] INVALID_SIGNATURE', {
+            offer_session_id,
+            offer_id,
+            available_offer_ids: session.offers?.map(o => o.offer_id),
+            offer_expires_at: offer.expires_at,
+            session_expires_at: session.expires_at,
+            normalized_offer_expires: normalizeSignatureDate(offer.expires_at),
+            normalized_session_expires: normalizeSignatureDate(session.expires_at)
+        });
+        return null;
+    }
+
     return offer;
 };
 
