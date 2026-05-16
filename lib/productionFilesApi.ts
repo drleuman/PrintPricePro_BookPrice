@@ -102,14 +102,71 @@ export async function validateProductionFileUrl(
 }
 
 /**
- * Placeholder for backend upload integration.
- * In this phase, it throws error as real endpoint does not exist.
+ * Performs a real upload to the backend (v5.3).
  */
 export async function uploadProductionFile(
   file: File,
-  kind: ProductionFileKind
+  kind: ProductionFileKind,
+  context?: { cart_id?: string; session_id?: string; order_intent_id?: string; user_id?: string }
 ): Promise<ProductionFileMetadata> {
-  throw new Error(`UPLOAD_ENDPOINT_NOT_CONFIGURED: Cannot upload ${file.name} for ${kind}`);
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('role', kind === 'INTERIOR_PDF' ? 'INTERIOR_PDF' : 'COVER_PDF');
+  
+  if (context?.cart_id) formData.append('cart_id', context.cart_id);
+  if (context?.session_id) formData.append('session_id', context.session_id);
+  if (context?.order_intent_id) formData.append('order_intent_id', context.order_intent_id);
+  if (context?.user_id) formData.append('user_id', context.user_id);
+
+  const response = await fetch('/api/production-files/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  return {
+    kind,
+    file_id: data.file_id,
+    filename: data.filename,
+    size_bytes: data.size_bytes,
+    mime_type: data.mime_type,
+    status: data.status,
+    source_type: 'UPLOAD',
+    checksum: data.checksum,
+    validation: data.validation,
+    storage_url: data.storage_url,
+    created_at: data.created_at
+  };
+}
+
+/**
+ * Lists production files from the server registry based on associations (v5.3 - Phase 3).
+ */
+export async function listProductionFiles(params: {
+  cart_id?: string;
+  session_id?: string;
+  order_ref?: string;
+  user_id?: string;
+}): Promise<ProductionFileMetadata[]> {
+  const query = new URLSearchParams();
+  if (params.cart_id) query.append('cart_id', params.cart_id);
+  if (params.session_id) query.append('session_id', params.session_id);
+  if (params.order_ref) query.append('order_ref', params.order_ref);
+  if (params.user_id) query.append('user_id', params.user_id);
+
+  const response = await fetch(`/api/production-files?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch production files from registry.');
+  }
+
+  const data = await response.json();
+  return data.files || [];
 }
 
 /**

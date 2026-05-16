@@ -27,28 +27,66 @@ interface HeaderProps {
   user: AuthUser | null;
   onOpenAuthModal: () => void;
   onLogout: () => void;
+  currentView?: 'marketplace' | 'printhouse';
+  onViewChange?: (view: 'marketplace' | 'printhouse') => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ cartCount, onCartClick, isDark, onThemeToggle, user, onOpenAuthModal, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({
+  cartCount,
+  onCartClick,
+  isDark,
+  onThemeToggle,
+  user,
+  onOpenAuthModal,
+  onLogout,
+  currentView = 'marketplace',
+  onViewChange
+}) => {
   return (
     <header className="sticky top-0 z-50 bg-corporate-secondary border-b border-white/10">
       <div className="container mx-auto px-6 md:px-10 max-w-[1400px] h-20 flex items-center justify-between">
         {/* Logo / Brand */}
-        <div className="flex items-center gap-4 min-w-max">
-          <PPOSLogo className="h-9 w-9" />
-          <div className="hidden md:block">
-            <div className="flex items-baseline gap-1.5 leading-none uppercase">
-              <span className="text-[0.65rem] font-technical font-black tracking-monolith text-corporate-accent">
-                PrintPrice
-              </span>
-              <span className="text-[0.65rem] font-technical font-black tracking-monolith text-corporate-text">
-                Pro
-              </span>
-            </div>
-            <div className="text-[0.6rem] uppercase tracking-[0.55em] text-corporate-muted mt-1 ml-0.5 font-mono opacity-90">
-              Book Price
+        <div className="flex items-center gap-6 min-w-max">
+          <div className="flex items-center gap-4 cursor-pointer" onClick={() => onViewChange?.('marketplace')}>
+            <PPOSLogo className="h-9 w-9" />
+            <div className="hidden md:block">
+              <div className="flex items-baseline gap-1.5 leading-none uppercase">
+                <span className="text-[0.65rem] font-technical font-black tracking-monolith text-corporate-accent">
+                  PrintPrice
+                </span>
+                <span className="text-[0.65rem] font-technical font-black tracking-monolith text-corporate-text">
+                  Pro
+                </span>
+              </div>
+              <div className="text-[0.6rem] uppercase tracking-[0.55em] text-corporate-muted mt-1 ml-0.5 font-mono opacity-90">
+                Book Price
+              </div>
             </div>
           </div>
+
+          {/* View Switcher (Only if logged in or for testing) */}
+          {onViewChange && (
+            <div className="hidden lg:flex items-center bg-black/20 p-1 rounded-lg border border-white/5">
+              <button
+                onClick={() => onViewChange('marketplace')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-monolith transition-all rounded ${currentView === 'marketplace'
+                    ? 'bg-corporate-accent text-white shadow-lg'
+                    : 'text-corporate-muted hover:text-white'
+                  }`}
+              >
+                Marketplace
+              </button>
+              <button
+                onClick={() => onViewChange('printhouse')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-monolith transition-all rounded ${currentView === 'printhouse'
+                    ? 'bg-corporate-accent text-white shadow-lg'
+                    : 'text-corporate-muted hover:text-white'
+                  }`}
+              >
+                Console
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -70,20 +108,22 @@ const Header: React.FC<HeaderProps> = ({ cartCount, onCartClick, isDark, onTheme
             </span>
           </button>
 
-          {/* Cart */}
-          <button
-            type="button"
-            onClick={onCartClick}
-            className="relative flex items-center justify-center w-9 h-9 text-corporate-text-secondary hover:text-corporate-accent transition-colors"
-            aria-label="Cart"
-          >
-            <ShoppingCartIcon className="w-5 h-5" />
-            {cartCount > 0 && (
-              <span className="absolute top-1 right-1 flex items-center justify-center w-4 h-4 rounded-full bg-corporate-accent text-white text-[0.5rem] font-black leading-none">
-                {cartCount > 9 ? '9+' : cartCount}
-              </span>
-            )}
-          </button>
+          {/* Cart (Only in marketplace view) */}
+          {currentView === 'marketplace' && (
+            <button
+              type="button"
+              onClick={onCartClick}
+              className="relative flex items-center justify-center w-9 h-9 text-corporate-text-secondary hover:text-corporate-accent transition-colors"
+              aria-label="Cart"
+            >
+              <ShoppingCartIcon className="w-5 h-5" />
+              {cartCount > 0 && (
+                <span className="absolute top-1 right-1 flex items-center justify-center w-4 h-4 rounded-full bg-corporate-accent text-white text-[0.5rem] font-black leading-none">
+                  {cartCount > 9 ? '9+' : cartCount}
+                </span>
+              )}
+            </button>
+          )}
 
           <div className="h-5 w-px bg-white/10 mx-1 hidden md:block" />
 

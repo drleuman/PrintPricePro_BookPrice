@@ -7,6 +7,29 @@ const crypto = require('crypto');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// ---- Persistence & Repositories (v5.3 - Phase 10A Hardening) ----
+const repositories = require('./repositories');
+
+// Initialize persistence (ensure schema, etc)
+(async () => {
+    try {
+        await repositories.initialize();
+        
+        if (process.env.NODE_ENV === 'production' && repositories.adapter === 'json') {
+            console.warn('[CONFIG_WARNING] JSON persistence is not recommended for production. Use PERSISTENCE_ADAPTER=mysql');
+        }
+    } catch (err) {
+        console.error(`[PERSISTENCE_INIT_FAILED] ${err.message}`);
+        if (process.env.NODE_ENV === 'production' && process.env.PERSISTENCE_ADAPTER === 'mysql') {
+            console.error('[FATAL] MySQL initialization failed in production. Exiting.');
+            process.exit(1);
+        }
+    }
+})();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -46,6 +69,147 @@ const buildControlPlaneHeaders = () => ({
     "x-source-app": "PrintPricePro_BookPrice"
 });
 
+// ---- Production File Storage Configuration (v5.3) ----
+const PRODUCTION_FILES_DIR = process.env.PRODUCTION_FILES_DIR || path.join(__dirname, 'storage', 'production-files');
+const PRODUCTION_FILES_INDEX = path.join(PRODUCTION_FILES_DIR, 'index.json');
+const MAX_FILE_SIZE_MB = parseInt(process.env.PRODUCTION_FILE_MAX_MB || '500', 10);
+
+// ---- Offer Sessions Configuration (v5.3 - Phase 4) ----
+const OFFER_SESSIONS_DIR = process.env.OFFER_SESSIONS_DIR || path.join(__dirname, 'storage', 'offer-sessions');
+const OFFER_SESSIONS_INDEX = path.join(OFFER_SESSIONS_DIR, 'index.json');
+const OFFER_SESSION_TTL_MINUTES = parseInt(process.env.OFFER_SESSION_TTL_MINUTES || '60', 10);
+const OFFER_SIGNING_SECRET = process.env.OFFER_SIGNING_SECRET || 'dev_secret_offer_signing_2026';
+
+// ---- Order Intent Configuration (v5.3 - Phase 5) ----
+const ORDER_INTENTS_DIR = process.env.ORDER_INTENTS_DIR || path.join(__dirname, 'storage', 'order-intents');
+const ORDER_INTENTS_INDEX = path.join(ORDER_INTENTS_DIR, 'index.json');
+
+// ---- Preflight Configuration (v5.3 - Phase 6) ----
+const PREFLIGHT_BASE_URL = process.env.PREFLIGHT_BASE_URL || 'http://127.0.0.1:3000';
+const PREFLIGHT_API_TOKEN = process.env.PREFLIGHT_API_TOKEN || '';
+const PREFLIGHT_ENABLED = process.env.PREFLIGHT_ENABLED === 'true';
+
+console.log(`[PREFLIGHT_CONFIG] enabled=${PREFLIGHT_ENABLED} base_url=${PREFLIGHT_BASE_URL}`);
+
+// ---- Billing & Payments Configuration (v5.3 - Phase 7) ----
+const PAYMENTS_ENABLED = process.env.PAYMENTS_ENABLED === 'true';
+const PAYMENT_PROVIDER = process.env.PAYMENT_PROVIDER || 'bank_transfer';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const PUBLIC_APP_BASE_URL = process.env.PUBLIC_APP_BASE_URL || 'http://localhost:5173';
+
+// ---- Dispatch Package Configuration (v5.3 - Phase 11) ----
+const DISPATCH_PACKAGE_TOKEN_SECRET = process.env.DISPATCH_PACKAGE_TOKEN_SECRET || SIGNING_SECRET;
+const DISPATCH_PACKAGE_TTL_HOURS = parseInt(process.env.DISPATCH_PACKAGE_TTL_HOURS || '168', 10);
+const CONTROL_PLANE_DISPATCH_PACKAGE_UPDATE_ENABLED = process.env.CONTROL_PLANE_DISPATCH_PACKAGE_UPDATE_ENABLED === 'true';
+
+// ---- Printhouse Production Queue Configuration (v5.3 - Phase 12) ----
+const CONTROL_PLANE_PRODUCTION_STATUS_SYNC_ENABLED = process.env.CONTROL_PLANE_PRODUCTION_STATUS_SYNC_ENABLED === 'true';
+const CONTROL_PLANE_PRODUCTION_STATUS_ENDPOINT = process.env.CONTROL_PLANE_PRODUCTION_STATUS_ENDPOINT || '/api/admin/orders/:orderRef/status';
+
+// ---- Customer Notification Configuration (v5.3 - Phase 13) ----
+const NOTIFICATIONS_ENABLED = process.env.NOTIFICATIONS_ENABLED === 'true';
+const NOTIFICATION_PROVIDER = process.env.NOTIFICATION_PROVIDER || 'console'; // 'console' | 'smtp'
+const NOTIFICATION_FROM_EMAIL = process.env.NOTIFICATION_FROM_EMAIL || 'noreply@printpricepro.com';
+const PUBLIC_APP_BASE_URL = process.env.PUBLIC_APP_BASE_URL || 'http://localhost:5173';
+
+const SMTP_CONFIG = {
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    user: process.env.SMTP_USER,
+    password: process.env.SMTP_PASSWORD,
+    secure: process.env.SMTP_SECURE === 'true'
+};
+
+if (process.env.NODE_ENV === 'production' && !process.env.DISPATCH_PACKAGE_TOKEN_SECRET) {
+    console.warn('[SECURITY_WARNING] DISPATCH_PACKAGE_TOKEN_SECRET missing. Falling back to SIGNING_SECRET.');
+}
+
+const BANK_TRANSFER_ENABLED = process.env.BANK_TRANSFER_ENABLED === 'true';
+const BANK_TRANSFER_ACCOUNT_NAME = process.env.BANK_TRANSFER_ACCOUNT_NAME || 'PrintPricePro Marketplace';
+const BANK_TRANSFER_IBAN = process.env.BANK_TRANSFER_IBAN || 'ES00 0000 0000 0000 0000 0000';
+const BANK_TRANSFER_SWIFT = process.env.BANK_TRANSFER_SWIFT || 'PPOSESMM';
+const BANK_TRANSFER_REFERENCE_PREFIX = process.env.BANK_TRANSFER_REFERENCE_PREFIX || 'PPOS';
+
+console.log(`[PAYMENT_CONFIG] enabled=${PAYMENTS_ENABLED} provider=${PAYMENT_PROVIDER}`);
+
+const stripe = require('stripe')(STRIPE_SECRET_KEY);
+
+// ---- Control Plane Handoff Configuration (v5.3 - Phase 8) ----
+const CONTROL_PLANE_ORDER_HANDOFF_ENABLED = process.env.CONTROL_PLANE_ORDER_HANDOFF_ENABLED === 'true';
+const CONTROL_PLANE_ORDER_ENDPOINT = process.env.CONTROL_PLANE_ORDER_ENDPOINT || '/api/admin/orders';
+const AUTO_HANDOFF_TO_PRINTHOUSE = process.env.AUTO_HANDOFF_TO_PRINTHOUSE === 'true';
+const AUTO_FINALIZE_AFTER_PAYMENT = process.env.AUTO_FINALIZE_AFTER_PAYMENT === 'true';
+
+console.log(`[HANDOFF_CONFIG] enabled=${CONTROL_PLANE_ORDER_HANDOFF_ENABLED} auto_finalize=${AUTO_FINALIZE_AFTER_PAYMENT}`);
+
+// ---- Production Hardening Configuration (v5.3 - Phase 9) ----
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
+const RATE_LIMIT_ENABLED = process.env.RATE_LIMIT_ENABLED === 'true';
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
+const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '60', 10);
+const UPLOAD_RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.UPLOAD_RATE_LIMIT_MAX_REQUESTS || '10', 10);
+const AUTH_RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS || '10', 10);
+
+const CLEANUP_ENABLED = process.env.CLEANUP_ENABLED === 'true';
+const PRODUCTION_FILE_RETENTION_HOURS = parseInt(process.env.PRODUCTION_FILE_RETENTION_HOURS || '24', 10);
+const ORDER_INTENT_RETENTION_DAYS = parseInt(process.env.ORDER_INTENT_RETENTION_DAYS || '30', 10);
+
+const APP_START_TIME = Date.now();
+
+console.log(`[SECURITY_CONFIG] rate_limit=${RATE_LIMIT_ENABLED} cleanup=${CLEANUP_ENABLED} retention_hours=${PRODUCTION_FILE_RETENTION_HOURS}`);
+
+if (process.env.NODE_ENV === 'production' && !ADMIN_API_TOKEN) {
+    console.error('[CONFIG_ERROR] ADMIN_API_TOKEN is MANDATORY in production.');
+    // In a strict prod, we'd exit(1). Here we follow the hardening guidelines to warn loudly.
+}
+
+if (process.env.NODE_ENV === 'production' && (!process.env.OFFER_SIGNING_SECRET || process.env.OFFER_SIGNING_SECRET === 'dev_secret_offer_signing_2026')) {
+    console.error('[OFFER_SIGNING_SECRET_MISSING] Mandatory secret missing in production!');
+    // In a real prod environment we might exit(1), but here we follow user requirements to log warning.
+}
+
+if (!fs.existsSync(PRODUCTION_FILES_DIR)) {
+    fs.mkdirSync(PRODUCTION_FILES_DIR, { recursive: true });
+    console.log(`[STORAGE] Created production files directory: ${PRODUCTION_FILES_DIR}`);
+}
+
+if (!fs.existsSync(OFFER_SESSIONS_DIR)) {
+    fs.mkdirSync(OFFER_SESSIONS_DIR, { recursive: true });
+    console.log(`[STORAGE] Created offer sessions directory: ${OFFER_SESSIONS_DIR}`);
+}
+
+if (!fs.existsSync(ORDER_INTENTS_DIR)) {
+    fs.mkdirSync(ORDER_INTENTS_DIR, { recursive: true });
+    console.log(`[STORAGE] Created order intents directory: ${ORDER_INTENTS_DIR}`);
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, PRODUCTION_FILES_DIR);
+    },
+    filename: (req, file, cb) => {
+        const timestamp = Date.now();
+        const random = crypto.randomBytes(4).toString('hex');
+        const ext = path.extname(file.originalname).toLowerCase() || '.pdf';
+        const safeName = `pf_${timestamp}_${random}${ext}`;
+        cb(null, safeName);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const isPdf = file.mimetype === 'application/pdf' || path.extname(file.originalname).toLowerCase() === '.pdf';
+        if (isPdf) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only PDF files are allowed'), false);
+        }
+    }
+});
+
 // ADAPTIVE VAULT (In-memory for v5.2 hardening)
 const carts = new Map();
 const sessionVault = new Map();
@@ -60,13 +224,24 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' })); // v5.3: Increased limit for rich payloads
 
-// Rate limiting
-const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { error: "Too many requests from this IP, please try again later." }
+// Rate limiting (Phase 9 Hardening)
+const createLimiter = (max, windowMs = RATE_LIMIT_WINDOW_MS) => rateLimit({
+    windowMs,
+    max: RATE_LIMIT_ENABLED ? max : 1000000,
+    message: { error: "RATE_LIMITED", message: "Too many requests. Please try again shortly." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `${req.ip}_${req.signedCookies['pp_session_id'] || 'anon'}`
 });
+
+const apiLimiter = createLimiter(RATE_LIMIT_MAX_REQUESTS);
+const uploadLimiter = createLimiter(UPLOAD_RATE_LIMIT_MAX_REQUESTS);
+const authLimiter = createLimiter(AUTH_RATE_LIMIT_MAX_REQUESTS);
+
 app.use('/api/', apiLimiter);
+app.use('/api/production-files/upload', uploadLimiter);
+app.use('/api/auth/', authLimiter);
+app.use('/api/budget/calculate', authLimiter); // Protect pricing engine from abuse
 
 // 🔴 UTILS: ADAPTIVE HELPERS
 const generateHmac = (data) => {
@@ -89,6 +264,155 @@ const getOrCreateSessionId = (req, res) => {
         console.log(`[SESSION_CREATED] new_session=${sessionId} ip=${req.ip}`);
     }
     return sessionId;
+};
+
+/**
+ * Resolves the authenticated or anonymous identity of the requester.
+ * (v5.3 - Phase 9 Hardening)
+ */
+const resolveRequestIdentity = (req) => {
+    const sessionId = req.signedCookies['pp_session_id'];
+    
+    // In a real app, we would verify JWT from Authorization header here
+    const authHeader = req.headers.authorization;
+    let authenticatedUser = null;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        // TODO: Full JWT verification against Control Plane / Identity service
+        // For now, we trust the session cookie for anonymous or use session vault for local auth
+    }
+
+    return {
+        sessionId,
+        user: authenticatedUser,
+        isAdmin: authHeader === `Bearer ${ADMIN_API_TOKEN}` && ADMIN_API_TOKEN.length > 0
+    };
+};
+
+/**
+ * Enforces ownership and access control for Order Intents.
+ */
+const assertOrderIntentAccess = (req, intent) => {
+    if (!intent) return false;
+    const identity = resolveRequestIdentity(req);
+    
+    if (identity.isAdmin) return true;
+    
+    // Anonymous ownership check
+    if (intent.session_id === identity.sessionId) {
+        console.log(`[ACCESS_GRANTED] intent=${intent.order_intent_id} type=anonymous_session`);
+        return true;
+    }
+
+    // Authenticated ownership check (if user_id present)
+    if (identity.user && String(intent.user_id) === String(identity.user.id)) {
+        console.log(`[ACCESS_GRANTED] intent=${intent.order_intent_id} type=authenticated_user`);
+        return true;
+    }
+
+    console.warn(`[ACCESS_DENIED] intent=${intent.order_intent_id} session=${identity.sessionId} ip=${req.ip}`);
+    return false;
+};
+
+/**
+ * Enforces ownership and access control for Production Files.
+ */
+const assertProductionFileAccess = async (req, file) => {
+    if (!file) return false;
+    const identity = resolveRequestIdentity(req);
+
+    if (identity.isAdmin) return true;
+
+    // Check associations
+    const associations = file.associations || {};
+    if (associations.session_id === identity.sessionId) {
+        return true;
+    }
+
+    // If linked to an intent, check intent access
+    if (associations.order_intent_id) {
+        const intent = await repositories.orderIntents.getById(associations.order_intent_id);
+        if (assertOrderIntentAccess(req, intent)) return true;
+    }
+
+    console.warn(`[ACCESS_DENIED] file=${file.file_id} session=${identity.sessionId} ip=${req.ip}`);
+    return false;
+};
+
+/**
+ * Protects administrative endpoints.
+ */
+const adminOnly = (req, res, next) => {
+    const identity = resolveRequestIdentity(req);
+    if (!identity.isAdmin) {
+        console.warn(`[ADMIN_ACTION_REJECTED] ip=${req.ip} auth_header=${!!req.headers.authorization}`);
+        return res.status(401).json({ ok: false, error: "UNAUTHORIZED_ADMIN_ACTION" });
+    }
+    console.log(`[ADMIN_ACTION_ACCEPTED] ip=${req.ip}`);
+    next();
+};
+
+/**
+ * Signs a dispatch package access token.
+ */
+const signDispatchToken = (packageId, intentId, printhouseId, expiresAt) => {
+    const payload = JSON.stringify({ packageId, intentId, printhouseId, expiresAt });
+    const hmac = crypto.createHmac('sha256', DISPATCH_PACKAGE_TOKEN_SECRET);
+    hmac.update(payload);
+    const signature = hmac.digest('hex');
+    return Buffer.from(JSON.stringify({ p: payload, s: signature })).toString('base64');
+};
+
+/**
+ * Verifies a dispatch package access token.
+ */
+const verifyDispatchToken = (token) => {
+    try {
+        const decoded = JSON.parse(Buffer.from(token, 'base64').toString('utf8'));
+        const { p: payload, s: signature } = decoded;
+        
+        const hmac = crypto.createHmac('sha256', DISPATCH_PACKAGE_TOKEN_SECRET);
+        hmac.update(payload);
+        if (hmac.digest('hex') !== signature) return null;
+
+        const data = JSON.parse(payload);
+        if (new Date(data.expiresAt) < new Date()) {
+            console.warn(`[DISPATCH_TOKEN_EXPIRED] package=${data.packageId} expired_at=${data.expiresAt}`);
+            return null;
+        }
+        return data;
+    } catch (err) {
+        console.warn(`[DISPATCH_TOKEN_INVALID] error=${err.message}`);
+        return null;
+    }
+};
+
+/**
+ * Validates dispatch package access from request.
+ */
+const assertDispatchPackageAccess = async (req, pkg) => {
+    if (!pkg) return false;
+    
+    // 1. Admin/Operator bypass
+    const identity = resolveRequestIdentity(req);
+    if (identity.isAdmin) return true;
+
+    // 2. Token access
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const verified = verifyDispatchToken(token);
+        if (verified && verified.packageId === pkg.package_id) {
+            return true;
+        }
+    }
+
+    // 3. Status check
+    if (pkg.status === 'REVOKED' || pkg.status === 'EXPIRED') {
+        return false;
+    }
+
+    return false;
 };
 
 const validateUrlAgainstSsrf = (urlString) => {
@@ -135,7 +459,12 @@ const isServerBackedProductionFile = (file) => {
     );
 };
 
+const isServerWarningProductionFile = (file) => {
+    return file?.status === 'UPLOADED_WITH_WARNINGS';
+};
+
 const isClientDeclaredProductionFile = (file) => {
+    // v5.3: SELECTED is no longer enough for checkout
     return Boolean(
         file?.status === 'SELECTED' &&
         file?.filename &&
@@ -155,12 +484,13 @@ const hasRequiredProductionFiles = (productionFiles) => {
     const interior = productionFiles?.interior_pdf;
     const cover = productionFiles?.cover_spine_back_pdf;
 
-    const isInteriorValid = isClientDeclaredProductionFile(interior) || 
-                           isServerBackedProductionFile(interior) || 
+    // v5.3: Checkout requires UPLOADED or VALIDATED.
+    // status SELECTED is REJECTED.
+    // status UPLOADED_WITH_WARNINGS is BLOCKED in Phase 2.
+    const isInteriorValid = isServerBackedProductionFile(interior) && !isServerWarningProductionFile(interior) || 
                            isExternalLinkDeclared(interior);
 
-    const isCoverValid = isClientDeclaredProductionFile(cover) || 
-                        isServerBackedProductionFile(cover) || 
+    const isCoverValid = isServerBackedProductionFile(cover) && !isServerWarningProductionFile(cover) || 
                         isExternalLinkDeclared(cover);
 
     return Boolean(
@@ -240,8 +570,53 @@ const mapProductionFilesToOrderStatus = (productionFiles) => {
     return 'FILES_PENDING';
 };
 
+// ---- Offer Session Signing Helpers (v5.3 - Phase 4 Business Logic) ----
+
+const signOfferPayload = (payload) => {
+    // Stable fields for signature: session_id, offer_id, printer_id, total_price, currency, spec_hash, expires_at
+    const specHash = crypto.createHash('sha256').update(JSON.stringify(payload.specs || {})).digest('hex');
+    const baseString = [
+        payload.offer_session_id,
+        payload.offer_id,
+        payload.printer_id || payload.print_house || '',
+        payload.total_price,
+        payload.currency,
+        specHash,
+        payload.expires_at
+    ].join('|');
+    
+    return crypto.createHmac('sha256', OFFER_SIGNING_SECRET).update(baseString).digest('hex');
+};
+
+const verifyOfferSignature = (offer, signature) => {
+    const computed = signOfferPayload(offer);
+    const valid = computed === signature;
+    if (!valid) console.error(`[OFFER_SIGNATURE_INVALID] offer_id=${offer.offer_id} session_id=${offer.offer_session_id}`);
+    return valid;
+};
+
+const isOfferSessionExpired = (session) => {
+    if (!session || !session.expires_at) return true;
+    const expired = new Date() > new Date(session.expires_at);
+    if (expired) console.warn(`[OFFER_SESSION_EXPIRED] offer_session_id=${session.offer_session_id}`);
+    return expired;
+};
+
+const getOfferFromSession = async (offer_session_id, offer_id) => {
+    const session = await repositories.offerSessions.getById(offer_session_id);
+    if (!session || isOfferSessionExpired(session)) return null;
+    const offer = session.offers.find(o => o.offer_id === offer_id);
+    if (offer) {
+        // Verify internal integrity of the registry record
+        if (!verifyOfferSignature({ ...offer, specs: session.normalized_specs, offer_session_id: session.offer_session_id, expires_at: session.expires_at }, offer.signature)) {
+            return null;
+        }
+    }
+    return offer;
+};
+
 // 🔐 SECURITY: Challenge Context
-app.post('/api/security/challenge', (req, res) => {
+app.post('/api/security/challenge', async (req, res) => {
     const context = req.body?.payload_context || req.body?.context;
 
     if (!context) {
@@ -258,6 +633,222 @@ app.post('/api/security/challenge', (req, res) => {
         .digest('hex');
 
     res.json({ success: true, token, nonce, timestamp });
+});
+
+// ---- Production File Validation Helpers (v5.3 - Phase 2) ----
+
+const validatePdfSignature = (filePath) => {
+    try {
+        const buffer = Buffer.alloc(5);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buffer, 0, 5, 0);
+        fs.closeSync(fd);
+        return buffer.toString() === '%PDF-';
+    } catch (err) {
+        console.error(`[VALIDATION_ERROR] Failed to read PDF signature: ${err.message}`);
+        return false;
+    }
+};
+
+const checkPdfEof = (filePath) => {
+    try {
+        const stats = fs.statSync(filePath);
+        const fileSize = stats.size;
+        if (fileSize === 0) return false;
+
+        const readSize = Math.min(fileSize, 4096);
+        const buffer = Buffer.alloc(readSize);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buffer, 0, readSize, fileSize - readSize);
+        fs.closeSync(fd);
+        
+        return buffer.toString().includes('%%EOF');
+    } catch (err) {
+        console.error(`[VALIDATION_ERROR] Failed to check PDF EOF: ${err.message}`);
+        return false;
+    }
+};
+
+const computeSha256 = (filePath) => {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', data => hash.update(data));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', err => reject(err));
+    });
+};
+
+// 🚀 PRODUCTION FILES: Upload Endpoint (v5.3 - Phase 3)
+app.post('/api/production-files/upload', async (req, res) => {
+    upload.single('file')(req, res, async (err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: "FILE_TOO_LARGE", message: `File too large. Max size is ${MAX_FILE_SIZE_MB}MB.` });
+            }
+            return res.status(400).json({ error: "UPLOAD_ERROR", message: err.message });
+        } else if (err) {
+            return res.status(400).json({ error: "INVALID_FILE", message: err.message });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: "EMPTY_FILE", message: "No file uploaded or file is empty." });
+        }
+
+        const filePath = req.file.path;
+        
+        // 0. Hygiene check
+        if (!fs.existsSync(filePath)) {
+            return res.status(400).json({ error: "UPLOAD_FILE_MISSING", message: "File was not found on server after upload." });
+        }
+
+        const { role, cart_id, session_id, order_intent_id, user_id } = req.body;
+        if (!['INTERIOR_PDF', 'COVER_PDF'].includes(role)) {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({ error: "INVALID_ROLE", message: "Invalid role. Must be INTERIOR_PDF or COVER_PDF." });
+        }
+
+        try {
+            // 1. Magic-Byte Validation
+            const hasValidSignature = validatePdfSignature(filePath);
+            if (!hasValidSignature) {
+                console.warn(`[UPLOAD_REJECTED] INVALID_PDF_SIGNATURE file=${req.file.originalname}`);
+                fs.unlinkSync(filePath);
+                return res.status(400).json({
+                    ok: false,
+                    error: "INVALID_PDF_SIGNATURE",
+                    message: "Uploaded file is not a valid PDF document."
+                });
+            }
+
+            // 2. EOF Sanity Check
+            const hasEof = checkPdfEof(filePath);
+            const warnings = [];
+            if (!hasEof) {
+                console.warn(`[UPLOAD_WARNING] PDF_EOF_MARKER_NOT_FOUND file=${req.file.originalname}`);
+                warnings.push("PDF_EOF_MARKER_NOT_FOUND");
+            }
+
+            // 3. Compute SHA-256
+            const checksumValue = await computeSha256(filePath);
+
+            const file_id = path.basename(req.file.filename, path.extname(req.file.filename));
+            const createdAt = new Date().toISOString();
+            const finalStatus = warnings.length > 0 ? "UPLOADED_WITH_WARNINGS" : "UPLOADED";
+
+            // 4. Create Registry Record (v5.3 Phase 3 Persistence)
+            const record = {
+                file_id,
+                role,
+                filename: req.file.originalname,
+                safe_filename: req.file.filename,
+                size_bytes: req.file.size,
+                mime_type: req.file.mimetype,
+                status: finalStatus,
+                source_type: "UPLOAD",
+                checksum: {
+                    algorithm: "sha256",
+                    value: checksumValue
+                },
+                validation: {
+                    pdf_signature_valid: true,
+                    eof_marker_found: hasEof,
+                    warnings: warnings
+                },
+                storage: {
+                    provider: "local",
+                    key: req.file.filename
+                },
+                associations: {
+                    cart_id: cart_id || null,
+                    session_id: session_id || null,
+                    order_intent_id: order_intent_id || null,
+                    order_ref: null,
+                    user_id: user_id || null
+                },
+                created_at: createdAt
+            };
+
+        try {
+            await repositories.productionFiles.create(record);
+            
+            await repositories.auditEvents.append({
+                entity_type: 'PRODUCTION_FILE',
+                entity_id: record.file_id,
+                event_type: 'UPLOAD_SUCCESS',
+                actor_id: identity.user_id,
+                session_id: identity.session_id,
+                ip: req.ip,
+                payload: { role: record.role, filename: record.filename }
+            });
+        } catch (dbErr) {
+            console.error(`[UPLOAD_DB_SAVE_FAILED] ${dbErr.message}`);
+            return res.status(500).json({ error: "UPLOAD_COMMIT_FAILED" });
+        }
+
+            res.json({
+                ok: true,
+                ...record,
+                storage: { provider: "local", key: record.storage.key }, // Filter paths
+                storage_url: `/api/production-files/download/${file_id}`
+            });
+
+        } catch (processErr) {
+            console.error(`[UPLOAD_PROCESS_ERROR] ${processErr.message}`);
+            if (fs.existsSync(filePath)) {
+                try { fs.unlinkSync(filePath); } catch(e) { console.error(`[CLEANUP_FAILED] ${e.message}`); }
+            }
+            res.status(500).json({ error: "INTERNAL_VALIDATION_ERROR", message: "Failed to process production file." });
+        }
+    });
+});
+
+// 🚀 PRODUCTION FILES: Discovery Endpoints (v5.3 - Phase 3)
+
+app.get('/api/production-files', async (req, res) => {
+    const { cart_id, session_id, order_ref, user_id } = req.query;
+    if (!cart_id && !session_id && !order_ref && !user_id) {
+        return res.status(400).json({ error: "MISSING_FILTER", message: "At least one association filter is required." });
+    }
+
+    const files = await repositories.productionFiles.listByAssociation({ cart_id, session_id, order_ref, user_id });
+    
+    // Ownership Filter
+    const allowedFiles = [];
+    for (const f of files) {
+        if (await assertProductionFileAccess(req, f)) {
+            allowedFiles.push(f);
+        }
+    }
+
+    // Sanitize output (don't expose absolute paths)
+    const sanitizedFiles = allowedFiles.map(f => ({
+        ...f,
+        storage: { provider: f.storage.provider, key: f.storage.key },
+        storage_url: `/api/production-files/download/${f.file_id}`
+    }));
+
+    res.json({ ok: true, files: sanitizedFiles });
+});
+
+app.get('/api/production-files/:fileId', async (req, res) => {
+    const file = await repositories.productionFiles.getById(req.params.fileId);
+    if (!file) {
+        return res.status(404).json({ ok: false, error: "PRODUCTION_FILE_NOT_FOUND" });
+    }
+
+    if (!assertProductionFileAccess(req, file)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_FILE_ACCESS" });
+    }
+
+    res.json({
+        ok: true,
+        file: {
+            ...file,
+            storage: { provider: file.storage.provider, key: file.storage.key },
+            storage_url: `/api/production-files/download/${file.file_id}`
+        }
+    });
 });
 
 // 🧠 AI CHAT PROXY — frontend contract -> Gemini contract
@@ -429,7 +1020,63 @@ app.post('/api/budget/calculate', [
         console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${req.body.delivery_country}`);
         const response = await axios.post(bpeUrl, req.body, { headers, timeout: 10000 });
         
-        res.json(response.data);
+        const bpeData = response.data;
+        const offers = Array.isArray(bpeData.offers) ? bpeData.offers : [];
+        
+        const offer_session_id = `ofs_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+        const expires_at = new Date(Date.now() + OFFER_SESSION_TTL_MINUTES * 60 * 1000).toISOString();
+        
+        const normalizedOffers = offers.map(o => {
+            const offer_id = `offer_${crypto.randomBytes(6).toString('hex')}`;
+            const total_price = Number(o.total_price ?? o.total_cost ?? 0);
+            const currency = o.currency || 'EUR';
+            
+            const offerPayload = {
+                offer_id,
+                offer_session_id,
+                printer_id: o.printer || o.print_house || 'BPE_Engine',
+                printer_name: o.print_house || 'BPE Printer',
+                total_price,
+                currency,
+                production_days: o.production_days || 0,
+                delivery_days: o.delivery_days || 0,
+                estimated_delivery_time: o.estimated_delivery_time || '',
+                pricing_breakdown: o.breakdown || {},
+                raw_offer_snapshot: o,
+                expires_at
+            };
+
+            const signature = signOfferPayload({ ...offerPayload, specs: req.body });
+            
+            return {
+                ...offerPayload,
+                signature
+            };
+        });
+
+        // Persist session (v5.3 Phase 4)
+        await repositories.offerSessions.create({
+            offer_session_id,
+            session_id: sessionId,
+            input_specs: req.body,
+            normalized_specs: req.body, // In a real app we might normalize them
+            offers: normalizedOffers,
+            expires_at,
+            created_at: new Date().toISOString()
+        });
+
+        res.json({
+            ok: true,
+            offer_session_id,
+            expires_at,
+            offers: normalizedOffers.map(({ raw_offer_snapshot, signature, ...rest }) => ({
+                ...rest,
+                // Don't leak raw snapshot or signature to frontend if not needed, 
+                // but requirements say signature optional on frontend.
+                signature 
+            })),
+            recommended_offer_id: bpeData.recommended_offer_id
+        });
     } catch (err) {
         console.error("[BPE_PROXY_ERROR]", err.message);
         res.status(502).json({ error: "Failed to fetch quotes from Book Price Engine." });
@@ -437,73 +1084,77 @@ app.post('/api/budget/calculate', [
 });
 
 // 🛒 CART API (Session-bound)
-app.get('/api/cart', (req, res) => {
+app.get('/api/cart', async (req, res) => {
     const sessionId = getOrCreateSessionId(req, res);
     res.json({ success: true, cart: carts.get(sessionId) || [] });
 });
 
-app.post('/api/cart/add', (req, res) => {
+app.post('/api/cart/add', async (req, res) => {
     const sessionId = getOrCreateSessionId(req, res);
+    const { offer_session_id, offer_id, specs: legacySpecs, offer: legacyOffer } = req.body;
 
-    const { specs, offer, pricing, allOffers, recommendedOffer, recommendedOfferId, selectedBy, metadata } = req.body;
+    // v5.3 Phase 4: Preferred payload uses server-authoritative IDs
+    if (offer_session_id && offer_id) {
+        const session = await repositories.offerSessions.getById(offer_session_id);
+        if (!session) {
+            return res.status(404).json({ error: "OFFER_SESSION_NOT_FOUND", message: "The pricing session was not found." });
+        }
+        if (isOfferSessionExpired(session)) {
+            return res.status(400).json({ 
+                error: "OFFER_SESSION_EXPIRED", 
+                message: "This pricing offer has expired. Please recalculate your book price." 
+            });
+        }
 
-    // 1. Structural Validation
-    if (!specs || !offer || !pricing) {
-        return res.status(400).json({ error: 'specs, offer and pricing are required.' });
+        const resolvedOffer = getOfferFromSession(offer_session_id, offer_id);
+        if (!resolvedOffer) {
+            return res.status(400).json({ error: "INVALID_OFFER", message: "The selected offer is invalid or has been tampered with." });
+        }
+
+        const cart = carts.get(sessionId) || [];
+        if (cart.length >= 5) return res.status(400).json({ error: "Cart limit reached." });
+
+        const newItem = {
+            id: `item_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+            offer_session_id,
+            offer_id,
+            specs: session.normalized_specs,
+            offer: resolvedOffer.raw_offer_snapshot || resolvedOffer,
+            pricing: {
+                total_price: resolvedOffer.total_price,
+                total_cost: resolvedOffer.total_price, // Assuming cost=price for simplicity in app
+                currency: resolvedOffer.currency,
+                breakdown: resolvedOffer.pricing_breakdown
+            },
+            addedAt: new Date().toISOString(),
+            metadata: {
+                offer_session_id,
+                offer_id,
+                signature: resolvedOffer.signature,
+                contract: 'BPE_MARKETPLACE_NATIVE',
+                source: 'PRINTPRICE_APP'
+            }
+        };
+
+        cart.push(newItem);
+        carts.set(sessionId, cart);
+        console.log(`[CART_ADD_OFFER_RESOLVED] session=${sessionId} offer_id=${offer_id}`);
+        return res.json({ success: true, item_id: newItem.id, cart_count: cart.length });
     }
 
-    // 2. Business Logic Validation
-    if (Number(specs.copies) <= 0 || Number(specs.interior_pages) <= 0) {
-        return res.status(400).json({ error: 'Invalid specifications.' });
+    // Backward compatibility (Dev only)
+    if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[CART_ADD_LEGACY_PAYLOAD_ACCEPTED_DEV] session=${sessionId}`);
+        // ... (preserving some legacy logic if needed, but requirements say reject in prod)
+        if (!legacySpecs || !legacyOffer) {
+             return res.status(400).json({ error: 'offer_session_id and offer_id are required.' });
+        }
+    } else {
+        console.error(`[CART_ADD_LEGACY_PAYLOAD_REJECTED] session=${sessionId}`);
+        return res.status(400).json({ error: 'MISSING_OFFER_SESSION', message: 'Offer session ID and offer ID are required.' });
     }
 
-    if (!/^[A-Z]{2}$/i.test(String(specs.delivery_country || ''))) {
-        return res.status(400).json({ error: 'Invalid delivery country.' });
-    }
-
-    // 3. Precision Gating
-    if (offer.checkout_allowed === false || offer.status === 'Range') {
-        return res.status(400).json({ error: 'This quote is not precise enough for checkout.' });
-    }
-
-    // 4. Price Integrity
-    const totalPrice = Number(pricing.total_price ?? offer.total_price ?? offer.total_cost);
-    if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
-        return res.status(400).json({ error: 'Invalid selected offer price.' });
-    }
-
-    const cart = carts.get(sessionId) || [];
-    if (cart.length >= 5) return res.status(400).json({ error: "Cart limit reached." });
-
-    const newItem = {
-        id: `item_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-        specs: {
-            ...specs,
-            delivery_country: String(specs.delivery_country || '').toUpperCase(),
-        },
-        offer,
-        pricing: {
-            ...pricing,
-            total_price: totalPrice,
-            currency: pricing.currency || offer.currency || 'EUR',
-        },
-        allOffers: Array.isArray(allOffers) ? allOffers : [],
-        recommendedOffer: recommendedOffer || null,
-        recommendedOfferId: recommendedOfferId || null,
-        selectedBy: selectedBy || 'CUSTOMER',
-        metadata: {
-            ...metadata,
-            contract: 'BPE_MARKETPLACE_NATIVE',
-            source: 'PRINTPRICE_APP',
-            bpe_endpoint: '/api/marketplace/offers',
-            payment_status: metadata?.payment_status || 'PENDING',
-        },
-        addedAt: new Date().toISOString(),
-    };
-
-    cart.push(newItem);
-    carts.set(sessionId, cart);
-    res.json({ success: true, item_id: newItem.id, cart_count: cart.length });
+    res.status(400).json({ error: 'Invalid request.' });
 });
 
 app.delete('/api/cart/items/:id', (req, res) => {
@@ -532,12 +1183,76 @@ app.post('/api/cart/checkout', async (req, res) => {
 
     const productionFiles = metadata?.production_files;
 
-    // v5.3: Mandatory production files validation
-    if (!hasRequiredProductionFiles(productionFiles)) {
+    // v5.3 Phase 3: Production Files Verification from Server-Side Registry
+    const interiorId = productionFiles?.interior_pdf_file_id || productionFiles?.interior_pdf?.file_id;
+    const coverId = productionFiles?.cover_pdf_file_id || productionFiles?.cover_spine_back_pdf?.file_id;
+
+    if (!interiorId || !coverId) {
         return res.status(400).json({
-            error: 'Production files (PDFs or HTTPS links) are required before checkout.'
+            error: "Production files not found in server repository",
+            missing: !interiorId && !coverId ? ["INTERIOR_PDF", "COVER_PDF"] : (!interiorId ? ["INTERIOR_PDF"] : ["COVER_PDF"])
         });
     }
+
+    const interiorRecord = await repositories.productionFiles.getById(interiorId);
+    const coverRecord = await repositories.productionFiles.getById(coverId);
+
+    if (!interiorRecord || !coverRecord) {
+        console.warn(`[CHECKOUT_FILE_REGISTRY_REJECTED] Records missing. interior=${interiorId} cover=${coverId}`);
+        return res.status(400).json({
+            error: "Production files not found in server repository",
+            missing: !interiorRecord && !coverRecord ? ["INTERIOR_PDF", "COVER_PDF"] : (!interiorRecord ? ["INTERIOR_PDF"] : ["COVER_PDF"])
+        });
+    }
+
+    // Role Verification
+    if (interiorRecord.role !== 'INTERIOR_PDF') {
+        return res.status(400).json({
+            error: "Production file role mismatch",
+            file_id: interiorId,
+            expected_role: "INTERIOR_PDF",
+            actual_role: interiorRecord.role
+        });
+    }
+    if (coverRecord.role !== 'COVER_PDF') {
+        return res.status(400).json({
+            error: "Production file role mismatch",
+            file_id: coverId,
+            expected_role: "COVER_PDF",
+            actual_role: coverRecord.role
+        });
+    }
+
+    // Status Verification (Allowed: UPLOADED, VALIDATED)
+    const allowedStatuses = ['UPLOADED', 'VALIDATED'];
+    if (!allowedStatuses.includes(interiorRecord.status)) {
+        return res.status(400).json({ error: `Production file '${interiorId}' is in invalid status: ${interiorRecord.status}` });
+    }
+    if (!allowedStatuses.includes(coverRecord.status)) {
+        return res.status(400).json({ error: `Production file '${coverId}' is in invalid status: ${coverRecord.status}` });
+    }
+
+    console.log(`[CHECKOUT_FILE_REGISTRY_VALIDATED] interior=${interiorId} cover=${coverId}`);
+
+    // Map registry records to final metadata (Sanitized)
+    const mapToPublic = (rec) => ({
+        file_id: rec.file_id,
+        role: rec.role,
+        filename: rec.filename,
+        size_bytes: rec.size_bytes,
+        checksum: rec.checksum,
+        status: rec.status,
+        validation: rec.validation,
+        storage: { provider: rec.storage.provider, key: rec.storage.key }
+    });
+
+    const finalProductionFiles = {
+        required: true,
+        status: interiorRecord.status === 'VALIDATED' && coverRecord.status === 'VALIDATED' ? 'FILES_VALIDATED' : 'FILES_PENDING',
+        required_files: ['INTERIOR_PDF', 'COVER_SPINE_BACK_PDF'],
+        interior_pdf: mapToPublic(interiorRecord),
+        cover_spine_back_pdf: mapToPublic(coverRecord)
+    };
 
     const controlPlaneOrdersUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/orders`;
     const headers = buildControlPlaneHeaders();
@@ -545,6 +1260,30 @@ app.post('/api/cart/checkout', async (req, res) => {
     const createdOrders = [];
     try {
         for (const item of cart) {
+            // v5.3 Phase 4: Server-authoritative offer resolution
+            const { offer_session_id, offer_id } = item;
+            if (!offer_session_id || !offer_id) {
+                console.error(`[CHECKOUT_OFFER_REJECTED] Missing offer session IDs in cart item=${item.id}`);
+                return res.status(400).json({ error: "ITEM_INTEGRITY_FAILED", message: "Cart item is missing server-authoritative offer IDs." });
+            }
+
+            const session = await repositories.offerSessions.getById(offer_session_id);
+            if (!session || isOfferSessionExpired(session)) {
+                console.warn(`[CHECKOUT_OFFER_REJECTED] Session expired or missing. ofs=${offer_session_id}`);
+                return res.status(400).json({ 
+                    error: "OFFER_SESSION_EXPIRED", 
+                    message: "One or more offers in your cart have expired. Please recalculate pricing." 
+                });
+            }
+
+            const resolvedOffer = getOfferFromSession(offer_session_id, offer_id);
+            if (!resolvedOffer) {
+                console.error(`[CHECKOUT_OFFER_REJECTED] Offer resolution failed or signature invalid. ofs=${offer_session_id} off=${offer_id}`);
+                return res.status(400).json({ error: "OFFER_VERIFICATION_FAILED", message: "One or more offers in your cart could not be verified." });
+            }
+
+            console.log(`[CHECKOUT_OFFER_RESOLVED] ofs=${offer_session_id} off=${offer_id} price=${resolvedOffer.total_price}`);
+
             const order_ref = `app_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
             const source_ref = `ppp_app_checkout_${Date.now()}`;
             
@@ -554,8 +1293,8 @@ app.post('/api/cart/checkout', async (req, res) => {
                 source_ref: source_ref,
                 order_ref: order_ref,
                 user_id: process.env.PPOS_BPE_SYSTEM_USER_ID || 'bpe-system-user',
-                offer_print_house: item.offer.printer || item.offer.print_house || item.offer_print_house || 'BPE_Engine',
-                offer_price: item.pricing.total_price ?? item.offer.total_price ?? 0,
+                offer_print_house: resolvedOffer.printer_id || resolvedOffer.printer_name || 'BPE_Engine',
+                offer_price: resolvedOffer.total_price,
                 customer: {
                     id: targetUserId,
                     email: user?.email || 'customer@example.com',
@@ -564,43 +1303,49 @@ app.post('/api/cart/checkout', async (req, res) => {
                     billing: user?.billing || {},
                     delivery: user?.delivery || { country: item.specs.delivery_country }
                 },
-                specs: item.specs,
+                specs: session.normalized_specs,
                 pricing: {
-                    currency: item.pricing.currency,
+                    currency: resolvedOffer.currency,
                     selected_by: "CUSTOMER",
-                    customer_selected_offer_id: item.offer.id,
-                    recommended_offer_id: item.recommendedOfferId || null,
-                    total_price: item.pricing.total_price,
-                    total_cost: item.pricing.total_cost,
-                    margin: item.pricing.margin,
-                    margin_percent: item.pricing.margin_percent
+                    customer_selected_offer_id: offer_id,
+                    recommended_offer_id: null, // We could pull this from session if needed
+                    total_price: resolvedOffer.total_price,
+                    total_cost: resolvedOffer.total_price,
+                    margin: 0, // Calculations happen in Control Plane usually
+                    margin_percent: 0
                 },
                 delivery: {
-                    country: item.specs.delivery_country,
-                    lead_time_days: item.offer.lead_time_days,
-                    estimated_delivery_time: item.offer.estimated_delivery_time || ''
+                    country: session.normalized_specs.delivery_country,
+                    lead_time_days: (resolvedOffer.production_days || 0) + (resolvedOffer.delivery_days || 0),
+                    estimated_delivery_time: resolvedOffer.estimated_delivery_time || ''
                 },
                 metadata_json: {
                     contract: "BPE_MARKETPLACE_NATIVE",
                     app: "PrintPricePro_BookPrice",
                     bpe_endpoint: "/api/marketplace/offers",
                     payment_status: "PENDING",
-                    customer_selected_offer: item.offer,
-                    offers_snapshot: item.allOffers,
-                    chat_context: item.metadata?.chat_context || {},
-                    ui_context: item.metadata?.ui_context || {},
-                    // v5.3 enriched metadata
-                    production_files: enrichProductionFilesMetadata(productionFiles),
+                    customer_selected_offer: resolvedOffer.raw_offer_snapshot || resolvedOffer,
+                    // v5.3 Phase 4 audit metadata
+                    pricing: {
+                        offer_session_id,
+                        offer_id,
+                        input_specs: session.input_specs,
+                        expires_at: session.expires_at,
+                        signature_validated_at: new Date().toISOString()
+                    },
+                    production_files: finalProductionFiles,
                     invoice_payment: {
-                        invoice_status: 'PENDING_FILES',
-                        payment_status: 'PENDING'
+                        payment_status: "PENDING"
                     }
                 },
-                status: mapProductionFilesToOrderStatus(productionFiles)
+                status: finalProductionFiles.status === 'FILES_VALIDATED' ? 'FILES_VALIDATED' : 'FILES_PENDING'
             };
 
             const response = await axios.post(controlPlaneOrdersUrl, payload, { headers, timeout: 15000 });
             createdOrders.push(response.data.order || response.data);
+            
+            // Mark as selected in session registry
+            await repositories.offerSessions.markSelectedOffer(offer_session_id, offer_id);
         }
 
         // Clear cart after successful checkout
@@ -608,6 +1353,10 @@ app.post('/api/cart/checkout', async (req, res) => {
         
         const firstOrder = createdOrders[0] || {};
         const firstRef = firstOrder.order_ref || firstOrder.orderRef || null;
+
+        // Update associations with the real order ID
+        await repositories.productionFiles.updateAssociation(interiorId, { order_ref: firstRef });
+        await repositories.productionFiles.updateAssociation(coverId, { order_ref: firstRef });
 
         res.json({ 
             success: true, 
@@ -621,6 +1370,2310 @@ app.post('/api/cart/checkout', async (req, res) => {
         console.error("[CHECKOUT_ERROR]", err.message);
         res.status(502).json({ error: "Failed to submit order to Control Plane." });
     }
+});
+
+// 📂 ORDER INTENT API (v5.3 Phase 5)
+
+app.post('/api/order-intents', async (req, res) => {
+    console.log(`[ORDER_INTENT_CREATE_REQUEST]`);
+    const sessionId = getOrCreateSessionId(req, res);
+    const { 
+        offer_session_id, 
+        offer_id, 
+        production_files, 
+        customer,
+        cart_id
+    } = req.body;
+
+    // 1. Resolve & Verify Offer
+    if (!offer_session_id || !offer_id) {
+        return res.status(400).json({ error: "MISSING_OFFER_IDS", message: "Offer session ID and offer ID are required." });
+    }
+
+    const resolvedOffer = await getOfferFromSession(offer_session_id, offer_id);
+    if (!resolvedOffer) {
+        console.error(`[ORDER_INTENT_REJECTED] Offer validation failed for ofs=${offer_session_id} off=${offer_id}`);
+        return res.status(400).json({ error: "OFFER_VERIFICATION_FAILED", message: "The selected offer is invalid, expired, or tampered." });
+    }
+
+    // 2. Resolve & Verify Production Files
+    if (!production_files || !production_files.interior_pdf_file_id || !production_files.cover_pdf_file_id) {
+        return res.status(400).json({ error: "MISSING_FILES", message: "Both Interior and Cover PDF file IDs are required." });
+    }
+
+    const interior = await repositories.productionFiles.getById(production_files.interior_pdf_file_id);
+    const cover = await repositories.productionFiles.getById(production_files.cover_pdf_file_id);
+
+    if (!interior || !cover) {
+        return res.status(400).json({ error: "FILES_NOT_FOUND", message: "One or both production files were not found in the registry." });
+    }
+
+    // Strict role validation
+    if (interior.role !== 'INTERIOR_PDF' || cover.role !== 'COVER_PDF') {
+        return res.status(400).json({ error: "ROLE_MISMATCH", message: "File roles do not match registry expectations." });
+    }
+
+    // Strict status validation
+    const allowedStatuses = ['UPLOADED', 'VALIDATED'];
+    if (!allowedStatuses.includes(interior.status) || !allowedStatuses.includes(cover.status)) {
+        console.error(`[ORDER_INTENT_REJECTED] File status not allowed. Int=${interior.status} Cov=${cover.status}`);
+        return res.status(400).json({ error: "FILE_STATUS_NOT_READY", message: "Production files must be fully uploaded and validated before creating intent." });
+    }
+
+    // 3. Create Order Intent
+    const order_intent_id = `oi_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const public_ref = `PPOS-OI-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    
+    const intentRecord = {
+        order_intent_id,
+        public_ref,
+        session_id: sessionId,
+        cart_id: cart_id || null,
+        user_id: req.body.user_id || null,
+        status: "FILES_UPLOADED",
+        lifecycle: {
+            quote_status: "SIGNED",
+            files_status: "UPLOADED",
+            preflight_status: "PENDING",
+            invoice_status: "NOT_CREATED",
+            payment_status: "NOT_STARTED",
+            control_plane_order_status: "NOT_CREATED",
+            printhouse_handoff_status: "NOT_STARTED"
+        },
+        offer: {
+            offer_session_id,
+            offer_id,
+            selected_offer_snapshot: resolvedOffer.raw_offer_snapshot || resolvedOffer,
+            signature_validated_at: new Date().toISOString()
+        },
+        production_files: {
+            interior_pdf_file_id: production_files.interior_pdf_file_id,
+            cover_pdf_file_id: production_files.cover_pdf_file_id,
+            files: [
+                { role: 'INTERIOR_PDF', file_id: production_files.interior_pdf_file_id, filename: interior.filename },
+                { role: 'COVER_PDF', file_id: production_files.cover_pdf_file_id, filename: cover.filename }
+            ]
+        },
+        customer: customer || {},
+        totals: {
+            currency: resolvedOffer.currency,
+            total_price: resolvedOffer.total_price,
+            tax_amount: 0,
+            shipping_amount: 0,
+            grand_total: resolvedOffer.total_price
+        },
+        created_at: new Date().toISOString()
+    };
+
+    await repositories.orderIntents.create(intentRecord);
+
+    // 4. Update Registry Associations
+    await repositories.productionFiles.updateAssociation(production_files.interior_pdf_file_id, { order_intent_id });
+    await repositories.productionFiles.updateAssociation(production_files.cover_pdf_file_id, { order_intent_id });
+    await repositories.offerSessions.markSelectedOffer(offer_session_id, offer_id);
+
+    await repositories.auditEvents.append({
+        entity_type: 'ORDER_INTENT',
+        entity_id: order_intent_id,
+        event_type: 'INTENT_CREATED',
+        actor_id: identity.user_id,
+        session_id: identity.session_id,
+        ip: req.ip,
+        payload: { public_ref, offer_id }
+    });
+
+    console.log(`[ORDER_INTENT_CREATED] id=${order_intent_id} ref=${public_ref}`);
+
+    // v5.3: Trigger Notification (Phase 13)
+    // Non-blocking
+    sendOrderNotification(intentRecord, 'ORDER_INTENT_CREATED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+
+    res.json({
+        ok: true,
+        order_intent_id,
+        public_ref,
+        status: intentRecord.status,
+        lifecycle: intentRecord.lifecycle,
+        next_required_action: "PREFLIGHT_VALIDATION_PENDING"
+    });
+});
+
+app.get('/api/order-intents/:id', async (req, res) => {
+    const intent = await repositories.orderIntents.getById(req.params.id);
+    if (!intent) return res.status(404).json({ error: "NOT_FOUND" });
+    
+    if (!assertOrderIntentAccess(req, intent)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    // Sanitize
+    const { ...sanitized } = intent;
+    res.json({ ok: true, order_intent: sanitized });
+});
+
+app.get('/api/order-intents', async (req, res) => {
+    const identity = resolveRequestIdentity(req);
+    const targetSessionId = session_id || identity.sessionId;
+
+    let intents = [];
+    if (user_id) {
+        // TODO: Replace with authenticated identity resolution in production
+        intents = await repositories.orderIntents.listByUser(user_id);
+    } else if (targetSessionId) {
+        intents = await repositories.orderIntents.listBySession(targetSessionId);
+    } else {
+        return res.status(400).json({ error: "MISSING_QUERY", message: "session_id or user_id is required." });
+    }
+
+    // Ownership check (double-safe filter)
+    const allowedIntents = intents.filter(i => assertOrderIntentAccess(req, i));
+
+    res.json({
+        ok: true,
+        order_intents: allowedIntents.map(i => ({
+            order_intent_id: i.order_intent_id,
+            public_ref: i.public_ref,
+            status: i.status,
+            lifecycle: i.lifecycle,
+            totals: i.totals,
+            created_at: i.created_at
+        }))
+    });
+});
+
+// Compatibility endpoint for "My Orders" panel
+app.get('/api/orders', async (req, res) => {
+    const identity = resolveRequestIdentity(req);
+    const sessionId = identity.sessionId || getOrCreateSessionId(req, res);
+    
+    const intents = await repositories.orderIntents.listBySession(sessionId);
+    
+    // Ownership check (redundant but safe)
+    const allowedIntents = intents.filter(i => assertOrderIntentAccess(req, i));
+    
+    res.json({
+        success: true,
+        orders: allowedIntents.map(i => ({
+            id: i.order_intent_id,
+            order_ref: i.public_ref,
+            status: i.status,
+            lifecycle: i.lifecycle,
+            offer_price: i.totals.total_price,
+            currency: i.totals.currency,
+            offer_print_house: i.offer?.selected_offer_snapshot?.printer_name || 'BPE Engine',
+            created_at: i.created_at,
+            is_intent: true,
+            specs: i.offer?.selected_offer_snapshot?.raw_offer_snapshot?.specs || {}
+        }))
+    });
+});
+
+// ✈️ PREFLIGHT ORCHESTRATION (v5.3 Phase 6)
+
+/**
+ * Creates a Preflight job for a specific production file.
+ */
+const createPreflightJobForFile = async (orderIntent, fileRecord) => {
+    const { order_intent_id, public_ref } = orderIntent;
+    const { file_id, role, storage } = fileRecord;
+    
+    console.log(`[PREFLIGHT_JOB_CREATE_REQUEST] intent=${order_intent_id} role=${role} file=${file_id}`);
+
+    if (!PREFLIGHT_ENABLED) {
+        return { status: 'NOT_CONFIGURED', error: 'Preflight not enabled' };
+    }
+
+    try {
+        const filePath = path.join(PRODUCTION_FILES_DIR, storage.key);
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`File not found on disk: ${storage.key}`);
+        }
+
+        const formData = new FormData();
+        const fileData = fs.readFileSync(filePath);
+        const blob = new Blob([fileData], { type: 'application/pdf' });
+        formData.append('file', blob, fileRecord.filename);
+        formData.append('metadata', JSON.stringify({
+            order_intent_id,
+            public_ref,
+            file_id,
+            role,
+            source: "MARKETPLACE_ORDER_INTENT",
+            checksum: fileRecord.checksum?.value
+        }));
+
+        const response = await axios.post(`${PREFLIGHT_BASE_URL}/api/v2/jobs`, formData, {
+            headers: {
+                'Authorization': `Bearer ${PREFLIGHT_API_TOKEN}`,
+                'Content-Type': 'multipart/form-data'
+            },
+            timeout: 30000
+        });
+
+        const jobData = response.data.job || response.data;
+        console.log(`[PREFLIGHT_JOB_CREATED] intent=${order_intent_id} role=${role} job_id=${jobData.jobId || jobData.id}`);
+        
+        return {
+            role,
+            file_id,
+            job_id: jobData.jobId || jobData.id,
+            status: 'PENDING',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+    } catch (err) {
+        console.error(`[PREFLIGHT_JOB_CREATE_FAILED] intent=${order_intent_id} role=${role} error=${err.message}`);
+        return {
+            role,
+            file_id,
+            status: 'ERROR',
+            error: err.message,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+    }
+};
+
+/**
+ * Polls the status of a specific Preflight job.
+ */
+const pollPreflightJobStatus = async (jobId) => {
+    if (!PREFLIGHT_ENABLED || !jobId) return null;
+
+    try {
+        const response = await axios.get(`${PREFLIGHT_BASE_URL}/api/v2/jobs/${jobId}`, {
+            headers: { 'Authorization': `Bearer ${PREFLIGHT_API_TOKEN}` },
+            timeout: 10000
+        });
+
+        const data = response.data.job || response.data;
+        return {
+            status: data.status, // PENDING, RUNNING, PASSED, FAILED, ERROR
+            risk_level: data.riskLevel || data.risk_level,
+            risk_score: data.riskScore || data.risk_score,
+            issue_count: data.issueCount || data.issue_count,
+            critical_count: data.criticalCount || data.critical_count,
+            findings: data.findings || [],
+            artifacts: data.artifacts || {},
+            updated_at: new Date().toISOString()
+        };
+    } catch (err) {
+        console.error(`[PREFLIGHT_POLL_FAILED] job=${jobId} error=${err.message}`);
+        return null;
+    }
+};
+
+app.post('/api/order-intents/:id/preflight/start', async (req, res) => {
+    const orderIntentId = req.params.id;
+    const intent = await repositories.orderIntents.getById(orderIntentId);
+
+    if (!intent) {
+        return res.status(404).json({ error: "ORDER_INTENT_NOT_FOUND", message: "The order intent was not found." });
+    }
+
+    if (!assertOrderIntentAccess(req, intent)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    console.log(`[PREFLIGHT_START_REQUEST] intent=${orderIntentId}`);
+
+    if (!PREFLIGHT_ENABLED) {
+        await repositories.orderIntents.updateStatus(orderIntentId, intent.status, { preflight_status: "NOT_CONFIGURED" });
+        await repositories.orderIntents.update(orderIntentId, { preflight: { status: "NOT_CONFIGURED", jobs: [] } });
+        console.warn(`[PREFLIGHT_NOT_CONFIGURED] intent=${orderIntentId}`);
+        return res.status(400).json({ 
+            error: "PREFLIGHT_NOT_CONFIGURED", 
+            message: "Preflight validation is not enabled in this environment." 
+        });
+    }
+
+    // Verify files exist and are ready
+    const interior = await repositories.productionFiles.getById(intent.production_files.interior_pdf_file_id);
+    const cover = await repositories.productionFiles.getById(intent.production_files.cover_pdf_file_id);
+
+    if (!interior || !cover) {
+        return res.status(400).json({ error: "PRODUCTION_FILE_NOT_FOUND", message: "Associated production files missing in registry." });
+    }
+
+    const readyStatuses = ['UPLOADED', 'VALIDATED'];
+    if (!readyStatuses.includes(interior.status) || !readyStatuses.includes(cover.status)) {
+        return res.status(400).json({ error: "PRODUCTION_FILE_NOT_READY", message: "Files must be fully uploaded before preflight." });
+    }
+
+    // Initialize preflight tracking
+    const preflightState = {
+        status: 'PENDING',
+        jobs: [],
+        started_at: new Date().toISOString()
+    };
+
+    await repositories.orderIntents.update(orderIntentId, { preflight: preflightState });
+    await repositories.orderIntents.updateStatus(orderIntentId, "PREFLIGHT_PENDING", { preflight_status: "PENDING" });
+
+    // Start jobs asynchronously
+    const interiorJobPromise = createPreflightJobForFile(intent, interior);
+    const coverJobPromise = createPreflightJobForFile(intent, cover);
+
+    const [iJob, cJob] = await Promise.all([interiorJobPromise, coverJobPromise]);
+
+    preflightState.jobs = [iJob, cJob];
+    
+    // Determine overall status
+    if (iJob.status === 'ERROR' || cJob.status === 'ERROR') {
+        preflightState.status = (iJob.status === 'ERROR' && cJob.status === 'ERROR') ? 'ERROR' : 'PARTIAL';
+    } else {
+        preflightState.status = 'RUNNING';
+    }
+
+    await repositories.orderIntents.update(orderIntentId, { preflight: preflightState });
+    
+    res.json({
+        ok: true,
+        order_intent_id: orderIntentId,
+        preflight_status: preflightState.status,
+        jobs: preflightState.jobs
+    });
+});
+
+app.get('/api/order-intents/:id/preflight', async (req, res) => {
+    const orderIntentId = req.params.id;
+    const intent = await repositories.orderIntents.getById(orderIntentId);
+
+    if (!intent || !intent.preflight) {
+        return res.status(404).json({ error: "PREFLIGHT_NOT_STARTED" });
+    }
+
+    if (!assertOrderIntentAccess(req, intent)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    console.log(`[PREFLIGHT_POLL_REQUEST] intent=${orderIntentId}`);
+
+    const currentPreflight = intent.preflight;
+    let anyChanged = false;
+
+    for (let i = 0; i < currentPreflight.jobs.length; i++) {
+        const job = currentPreflight.jobs[i];
+        if (job.job_id && !['PASSED', 'FAILED', 'ERROR'].includes(job.status)) {
+            const freshStatus = await pollPreflightJobStatus(job.job_id);
+            if (freshStatus) {
+                currentPreflight.jobs[i] = { ...job, ...freshStatus };
+                anyChanged = true;
+                console.log(`[PREFLIGHT_JOB_STATUS_UPDATED] job=${job.job_id} status=${freshStatus.status}`);
+                
+                // If passed, update production file registry
+                if (freshStatus.status === 'PASSED') {
+                    await repositories.productionFiles.updateStatus(job.file_id, 'VALIDATED', { preflight_job_id: job.job_id });
+                }
+            }
+        }
+    }
+
+    if (anyChanged) {
+        currentPreflight.last_checked_at = new Date().toISOString();
+        
+        // Compute overall status
+        const allStatuses = currentPreflight.jobs.map(j => j.status);
+        if (allStatuses.every(s => s === 'PASSED')) {
+            currentPreflight.status = 'PASSED';
+            currentPreflight.completed_at = new Date().toISOString();
+            await repositories.orderIntents.updateStatus(orderIntentId, "PREFLIGHT_VALIDATED", { preflight_status: "SUCCESS" });
+            console.log(`[PREFLIGHT_ORDER_INTENT_PASSED] intent=${orderIntentId}`);
+            sendOrderNotification(intent, 'PREFLIGHT_PASSED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+        } else if (allStatuses.some(s => s === 'FAILED')) {
+            currentPreflight.status = 'FAILED';
+            currentPreflight.completed_at = new Date().toISOString();
+            await repositories.orderIntents.updateStatus(orderIntentId, "PREFLIGHT_FAILED", { preflight_status: "FAILED" });
+            console.log(`[PREFLIGHT_ORDER_INTENT_FAILED] intent=${orderIntentId}`);
+            
+            // v5.3: Trigger Exception (Phase 14)
+            await openOrderIntentException(intent, {
+                status: "CUSTOMER_REUPLOAD_REQUIRED",
+                reason_code: "PREFLIGHT_FAILED",
+                reason_message: "One or more production files failed preflight validation.",
+                customer_message: "Your print files need attention before production can continue. Please upload corrected files.",
+                source: "PREFLIGHT",
+                blocking: true
+            });
+
+            sendOrderNotification(intent, 'PREFLIGHT_FAILED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+        } else if (allStatuses.some(s => s === 'ERROR')) {
+            currentPreflight.status = 'ERROR';
+            await repositories.orderIntents.updateStatus(orderIntentId, intent.status, { preflight_status: "FAILED" });
+        } else if (allStatuses.some(s => ['RUNNING', 'PENDING'].includes(s))) {
+            currentPreflight.status = 'RUNNING';
+        }
+
+        await repositories.orderIntents.update(orderIntentId, { preflight: currentPreflight });
+    }
+
+    res.json({
+        ok: true,
+        preflight: currentPreflight
+    });
+});
+
+// ---- Billing & Payment Gate (v5.3 - Phase 7) ----
+
+/**
+ * Creates a Stripe Checkout Session for an Order Intent.
+ */
+async function createStripeCheckoutSession(orderIntent) {
+    if (!STRIPE_SECRET_KEY) {
+        throw new Error("STRIPE_NOT_CONFIGURED");
+    }
+
+    let stripe;
+    try {
+        stripe = require('stripe')(STRIPE_SECRET_KEY);
+    } catch (e) {
+        console.error("[BILLING_STRIPE_LOAD_FAILED] Could not load stripe package.");
+        throw new Error("STRIPE_PACKAGE_MISSING");
+    }
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+            {
+                price_data: {
+                    currency: orderIntent.totals.currency.toLowerCase(),
+                    product_data: {
+                        name: `Order Reference: ${orderIntent.public_ref}`,
+                        description: `PrintPricePro BookPrice Marketplace Order (${orderIntent.offer.selected_offer_snapshot.printer_name})`,
+                    },
+                    unit_amount: Math.round(orderIntent.totals.grand_total * 100), // Stripe uses cents
+                },
+                quantity: 1,
+            },
+        ],
+        mode: 'payment',
+        metadata: {
+            order_intent_id: orderIntent.order_intent_id,
+            public_ref: orderIntent.public_ref,
+            offer_session_id: orderIntent.offer.offer_session_id,
+            offer_id: orderIntent.offer.offer_id,
+        },
+        success_url: `${PUBLIC_APP_BASE_URL}/?payment=success&order_intent_id=${orderIntent.order_intent_id}`,
+        cancel_url: `${PUBLIC_APP_BASE_URL}/?payment=cancelled&order_intent_id=${orderIntent.order_intent_id}`,
+    });
+
+    return session;
+}
+
+/**
+ * POST /api/order-intents/:id/billing/create
+ * Orchestrates invoice and payment creation.
+ */
+app.post('/api/order-intents/:id/billing/create', async (req, res) => {
+    const order_intent_id = req.params.id;
+    const intent = await repositories.orderIntents.getById(order_intent_id);
+
+    if (!intent) {
+        return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    }
+
+    if (!assertOrderIntentAccess(req, intent)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    console.log(`[BILLING_CREATE_REQUEST] id=${order_intent_id} provider=${PAYMENT_PROVIDER}`);
+
+    // 1. Preflight Gate
+    if (!intent.preflight || intent.preflight.status !== 'PASSED') {
+        console.warn(`[BILLING_REJECTED_PREFLIGHT_NOT_PASSED] id=${order_intent_id} status=${intent.preflight?.status}`);
+        return res.status(409).json({
+            ok: false,
+            error: "PREFLIGHT_NOT_PASSED",
+            message: "Invoice and payment can only be created after files pass Preflight validation."
+        });
+    }
+
+    // 2. Billing Integrity Check
+    if (!PAYMENTS_ENABLED) {
+        console.warn(`[PAYMENT_PROVIDER_NOT_CONFIGURED] id=${order_intent_id} PAYMENTS_ENABLED=false`);
+        return res.status(501).json({
+            ok: false,
+            error: "BILLING_NOT_CONFIGURED",
+            message: "Billing is not enabled in this environment."
+        });
+    }
+
+    // 3. Idempotency Check
+    if (intent.invoice && intent.invoice.status !== 'ERROR' && intent.payment && intent.payment.status !== 'NOT_STARTED') {
+        console.log(`[BILLING_IDEMPOTENT_RETURN] id=${order_intent_id}`);
+        return res.json({
+            ok: true,
+            provider: intent.payment.provider,
+            invoice: intent.invoice,
+            payment: intent.payment,
+            next_required_action: intent.payment.status === 'PENDING' ? "PAYMENT_PENDING" : "PAYMENT_COMPLETED"
+        });
+    }
+
+    // 4. Resource Verification
+    // Ensure files still exist and are valid in registry
+    // (In a real DB we'd check associations, here we assume registry is consistent)
+
+    // 5. Create Billing Objects
+    const timestamp = new Date().toISOString();
+    const shortDate = timestamp.split('T')[0].replace(/-/g, '');
+    const randomSuffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+
+    const invoice_id = `inv_${crypto.randomUUID()}`;
+    const invoice_number = `${BANK_TRANSFER_REFERENCE_PREFIX}-INV-${shortDate}-${randomSuffix}`;
+    
+    const newInvoice = {
+        invoice_id,
+        invoice_number,
+        status: 'CREATED',
+        amount: intent.totals.grand_total,
+        currency: intent.totals.currency,
+        created_at: timestamp,
+        updated_at: timestamp
+    };
+
+    const newPayment = {
+        provider: PAYMENT_PROVIDER,
+        status: 'PENDING',
+        created_at: timestamp,
+        updated_at: timestamp
+    };
+
+    // Refactor to async flow
+    (async () => {
+        try {
+            if (PAYMENT_PROVIDER === 'stripe') {
+                const session = await createStripeCheckoutSession(intent);
+                newPayment.checkout_url = session.url;
+                newPayment.payment_intent_id = session.id;
+                console.log(`[PAYMENT_STRIPE_SESSION_CREATED] id=${order_intent_id} session=${session.id}`);
+            } else if (PAYMENT_PROVIDER === 'bank_transfer') {
+                if (!BANK_TRANSFER_ENABLED) {
+                    throw new Error("BANK_TRANSFER_DISABLED");
+                }
+                newPayment.bank_transfer_reference = `${BANK_TRANSFER_REFERENCE_PREFIX}-${intent.public_ref}`;
+                newPayment.instructions = {
+                    account_name: BANK_TRANSFER_ACCOUNT_NAME,
+                    iban: BANK_TRANSFER_IBAN,
+                    swift: BANK_TRANSFER_SWIFT,
+                    amount: intent.totals.grand_total,
+                    currency: intent.totals.currency,
+                    reference: newPayment.bank_transfer_reference
+                };
+                console.log(`[PAYMENT_BANK_TRANSFER_CREATED] id=${order_intent_id} ref=${newPayment.bank_transfer_reference}`);
+            } else {
+                throw new Error("UNKNOWN_PROVIDER");
+            }
+
+            // Update Intent
+            intent.invoice = newInvoice;
+            intent.payment = newPayment;
+            intent.lifecycle.invoice_status = 'CREATED';
+            intent.lifecycle.payment_status = 'PENDING';
+            intent.updated_at = timestamp;
+
+            await repositories.orderIntents.update(intent.order_intent_id, intent);
+            console.log(`[BILLING_INVOICE_CREATED] id=${order_intent_id} inv=${invoice_number}`);
+            
+            // v5.3: Trigger Notification (Phase 13)
+            sendOrderNotification(intent, 'BILLING_CREATED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+
+            res.json({
+                ok: true,
+                provider: PAYMENT_PROVIDER,
+                invoice: newInvoice,
+                payment: newPayment,
+                next_required_action: PAYMENT_PROVIDER === 'stripe' ? "STRIPE_CHECKOUT_REQUIRED" : "BANK_TRANSFER_PAYMENT_PENDING"
+            });
+
+        } catch (err) {
+            console.error(`[BILLING_CREATE_FAILED] id=${order_intent_id} error=${err.message}`);
+            res.status(500).json({
+                ok: false,
+                error: err.message === "STRIPE_NOT_CONFIGURED" ? "STRIPE_NOT_CONFIGURED" : "BILLING_GENERATION_FAILED",
+                message: err.message
+            });
+        }
+    })();
+});
+
+/**
+ * GET /api/order-intents/:id/payment
+ * Returns the current payment status and instructions.
+ */
+app.get('/api/order-intents/:id/payment', async (req, res) => {
+    const intent = await repositories.orderIntents.getById(req.params.id);
+    if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+    if (!assertOrderIntentAccess(req, intent)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    res.json({
+        ok: true,
+        invoice: intent.invoice,
+        payment: intent.payment,
+        lifecycle: intent.lifecycle
+    });
+});
+
+/**
+ * POST /api/payments/stripe/webhook
+ * Industrial Stripe webhook handler with Phase 9 signature verification.
+ */
+app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    
+    let event;
+
+    try {
+        if (!STRIPE_WEBHOOK_SECRET) throw new Error("STRIPE_WEBHOOK_SECRET_MISSING");
+        event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+        console.error(`[STRIPE_WEBHOOK_REJECTED] error=${err.message} ip=${req.ip}`);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    console.log(`[STRIPE_WEBHOOK_VERIFIED] type=${event.type} id=${event.id}`);
+
+    try {
+        // Handle the event
+        switch (event.type) {
+            case 'checkout.session.completed': {
+                const session = event.data.object;
+                const orderIntentId = session.metadata?.order_intent_id;
+                
+                if (!orderIntentId) {
+                    console.warn(`[STRIPE_WEBHOOK_WARNING] No order_intent_id in session metadata: ${session.id}`);
+                    break;
+                }
+
+                const intent = await repositories.orderIntents.getById(orderIntentId);
+                if (!intent) {
+                    console.error(`[STRIPE_WEBHOOK_ERROR] Intent not found for session metadata: ${orderIntentId}`);
+                    break;
+                }
+
+                console.log(`[STRIPE_PAYMENT_SUCCESS] intent=${orderIntentId} session=${session.id}`);
+
+                intent.payment.status = 'PAID';
+                intent.payment.stripe_event_id = event.id;
+                intent.lifecycle.payment_status = 'PAID';
+                intent.updated_at = new Date().toISOString();
+                
+                await repositories.orderIntents.update(orderIntentId, intent);
+                
+                // v5.3: Trigger Notification (Phase 13)
+                sendOrderNotification(intent, 'PAYMENT_CONFIRMED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+
+                if (AUTO_FINALIZE_AFTER_PAYMENT) {
+                    console.log(`[AUTO_FINALIZE_TRIGGERED] intent=${orderIntentId}`);
+                    await finalizeOrderIntent(orderIntentId).catch(err => {
+                        console.error(`[AUTO_FINALIZE_FAILED] intent=${orderIntentId} error=${err.message}`);
+                    });
+                }
+                break;
+            }
+            case 'payment_intent.payment_failed': {
+                const intent = event.data.object;
+                console.warn(`[STRIPE_PAYMENT_FAILED] id=${intent.id} message=${intent.last_payment_error?.message}`);
+                break;
+            }
+            default:
+                console.log(`[STRIPE_WEBHOOK_UNHANDLED_EVENT] type=${event.type}`);
+        }
+    } catch (err) {
+        console.error(`[STRIPE_WEBHOOK_ORCHESTRATION_FAILED] event=${event.id} error=${err.message}`);
+        return res.status(500).json({ error: "INTERNAL_WEBHOOK_ERROR" });
+    }
+
+    res.json({ received: true });
+});
+
+// ---- Finalization & Handoff (v5.3 - Phase 8) ----
+
+/**
+ * Builds the comprehensive payload for Control Plane order creation.
+ */
+async function buildControlPlaneOrderPayload(orderIntent) {
+    const files = await Promise.all(orderIntent.production_files.files.map(async f => {
+        const registryFile = await repositories.productionFiles.getById(f.file_id);
+        const preflightJob = orderIntent.preflight?.jobs.find(j => j.file_id === f.file_id);
+        return {
+            file_id: f.file_id,
+            role: f.role,
+            filename: f.filename,
+            size_bytes: registryFile?.size_bytes,
+            checksum: registryFile?.checksum,
+            status: registryFile?.status,
+            storage: { provider: registryFile?.storage?.provider, key: registryFile?.storage?.key },
+            preflight_job_id: preflightJob?.job_id,
+            preflight_summary: preflightJob ? {
+                status: preflightJob.status,
+                risk_level: preflightJob.risk_level,
+                issue_count: preflightJob.issue_count
+            } : null
+        };
+    }));
+
+    return {
+        source: "PPOS_MARKETPLACE",
+        order_intent_id: orderIntent.order_intent_id,
+        public_ref: orderIntent.public_ref,
+        customer: orderIntent.customer,
+        pricing: {
+            offer_session_id: orderIntent.offer.offer_session_id,
+            offer_id: orderIntent.offer.offer_id,
+            selected_offer_snapshot: orderIntent.offer.selected_offer_snapshot,
+            totals: orderIntent.totals
+        },
+        production_files: files,
+        preflight: {
+            status: orderIntent.preflight?.status,
+            jobs: orderIntent.preflight?.jobs || [],
+            artifacts: {} // artifacts would be linked here
+        },
+        billing: {
+            invoice: orderIntent.invoice,
+            payment: orderIntent.payment
+        },
+        printhouse: {
+            printhouse_id: orderIntent.offer.selected_offer_snapshot.printer_id,
+            printhouse_name: orderIntent.offer.selected_offer_snapshot.printer_name
+        },
+        metadata_json: {
+            marketplace_phase: "PAYMENT_CONFIRMED_HANDOFF",
+            created_from_order_intent: true,
+            trace: {
+                order_intent_id: orderIntent.order_intent_id,
+                public_ref: orderIntent.public_ref,
+                session_id: orderIntent.session_id,
+                created_at: orderIntent.created_at
+            }
+        }
+    };
+}
+
+/**
+ * Orchestrates the finalization and handoff of an Order Intent.
+ */
+async function finalizeOrderIntent(orderIntentId) {
+    const intent = await repositories.orderIntents.getById(orderIntentId);
+    if (!intent) throw new Error("NOT_FOUND");
+
+    console.log(`[FINALIZE_REQUEST] id=${orderIntentId} current_cp_status=${intent.control_plane?.status}`);
+
+    // 1. Idempotency Check
+    if (intent.control_plane?.status === 'CREATED') {
+        console.log(`[FINALIZE_IDEMPOTENT_RETURN] id=${orderIntentId} ref=${intent.control_plane.order_ref}`);
+        return { ok: true, already_finalized: true, order_ref: intent.control_plane.order_ref };
+    }
+
+    // 2. State Validation
+    if (intent.preflight?.status !== 'PASSED') {
+        throw new Error("PREFLIGHT_NOT_PASSED");
+    }
+    if (intent.payment?.status !== 'PAID') {
+        throw new Error("PAYMENT_NOT_CONFIRMED");
+    }
+
+    // Initialize Control Plane state if missing
+    if (!intent.control_plane) {
+        intent.control_plane = {
+            status: 'READY',
+            order_ref: null,
+            order_id: null,
+            endpoint: CONTROL_PLANE_ORDER_ENDPOINT,
+            created_at: null,
+            updated_at: null
+        };
+    }
+
+    if (!CONTROL_PLANE_ORDER_HANDOFF_ENABLED) {
+        console.warn(`[CONTROL_PLANE_HANDOFF_NOT_CONFIGURED] id=${orderIntentId}`);
+        intent.control_plane.status = 'NOT_CONFIGURED';
+        intent.lifecycle.control_plane_order_status = 'NOT_CONFIGURED';
+        await repositories.orderIntents.update(orderIntentId, intent);
+        throw new Error("CONTROL_PLANE_HANDOFF_NOT_CONFIGURED");
+    }
+
+    // 3. Prepare Printhouse Handoff Package
+    intent.printhouse_handoff = {
+        status: 'READY',
+        printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
+        printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+    intent.lifecycle.printhouse_handoff_status = 'READY';
+
+    // 4. Submit to Control Plane
+    console.log(`[CONTROL_PLANE_ORDER_CREATE_REQUEST] id=${orderIntentId} url=${CONTROL_PLANE_BASE_URL}${CONTROL_PLANE_ORDER_ENDPOINT}`);
+    
+    const payload = await buildControlPlaneOrderPayload(intent);
+    const headers = {
+        ...buildControlPlaneHeaders(),
+        "X-Idempotency-Key": orderIntentId
+    };
+
+    intent.control_plane.status = 'CREATING';
+    intent.lifecycle.control_plane_order_status = 'CREATING';
+    await repositories.orderIntents.update(orderIntentId, intent);
+
+    try {
+        const response = await axios.post(`${CONTROL_PLANE_BASE_URL}${CONTROL_PLANE_ORDER_ENDPOINT}`, payload, { headers, timeout: 20000 });
+        const cpOrder = response.data.order || response.data;
+
+        intent.control_plane.status = 'CREATED';
+        intent.control_plane.order_ref = cpOrder.order_ref || cpOrder.orderRef || null;
+        intent.control_plane.order_id = cpOrder.order_id || cpOrder.id || null;
+        intent.control_plane.response = response.data;
+        intent.control_plane.created_at = new Date().toISOString();
+        intent.control_plane.updated_at = new Date().toISOString();
+        
+        intent.lifecycle.control_plane_order_status = 'CREATED';
+        intent.status = 'CONTROL_PLANE_ORDER_CREATED';
+
+        if (AUTO_HANDOFF_TO_PRINTHOUSE) {
+            console.log(`[PRINTHOUSE_HANDOFF_QUEUED] id=${orderIntentId} auto=true`);
+            intent.printhouse_handoff.status = 'QUEUED';
+            intent.lifecycle.printhouse_handoff_status = 'QUEUED';
+        }
+
+        await repositories.orderIntents.update(orderIntentId, intent);
+        console.log(`[CONTROL_PLANE_ORDER_CREATED] id=${orderIntentId} ref=${intent.control_plane.order_ref}`);
+
+        // v5.3: Trigger Notification (Phase 13)
+        sendOrderNotification(intent, 'CONTROL_PLANE_ORDER_CREATED').catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+
+        return { ok: true, order_ref: intent.control_plane.order_ref };
+    } catch (err) {
+        console.error(`[CONTROL_PLANE_ORDER_CREATE_FAILED] id=${orderIntentId} error=${err.message}`);
+        intent.control_plane.status = 'FAILED';
+        intent.control_plane.error = { message: err.message, response: err.response?.data };
+        intent.control_plane.updated_at = new Date().toISOString();
+        intent.lifecycle.control_plane_order_status = 'FAILED';
+        await repositories.orderIntents.update(orderIntentId, intent);
+        throw err;
+    }
+}
+
+/**
+ * POST /api/order-intents/:id/finalize
+ * Manually triggers order finalization after payment is confirmed.
+ */
+app.post('/api/order-intents/:id/finalize', async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getById(req.params.id);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        if (!assertOrderIntentAccess(req, intent)) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+        }
+
+        const result = await finalizeOrderIntent(req.params.id);
+        res.json(result);
+    } catch (err) {
+        const status = err.message === 'NOT_FOUND' ? 404 : (['PAYMENT_NOT_CONFIRMED', 'PREFLIGHT_NOT_PASSED'].includes(err.message) ? 409 : 500);
+        res.status(status).json({ 
+            ok: false, 
+            error: err.message,
+            message: err.message === 'CONTROL_PLANE_HANDOFF_NOT_CONFIGURED' ? "Control Plane order handoff is disabled." : err.message
+        });
+    }
+});
+
+// ---- Printhouse Dispatch & Package Layer (v5.3 - Phase 11) ----
+
+/**
+ * Builds a secure dispatch package from a paid/validated Order Intent.
+ */
+async function buildDispatchPackage(intent) {
+    const packageId = `dp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const expiresAt = new Date(Date.now() + DISPATCH_PACKAGE_TTL_HOURS * 3600000).toISOString();
+    
+    // Resolve all files from registry
+    const files = await Promise.all(intent.production_files.files.map(async f => {
+        const regFile = await repositories.productionFiles.getById(f.file_id);
+        const preflightJob = intent.preflight?.jobs.find(j => j.file_id === f.file_id);
+        return {
+            file_id: f.file_id,
+            role: f.role,
+            filename: f.filename,
+            checksum: regFile?.checksum,
+            size_bytes: regFile?.size_bytes,
+            storage_provider: regFile?.storage?.provider,
+            storage_key: regFile?.storage?.key,
+            preflight_job_id: preflightJob?.job_id,
+            access_status: 'READY'
+        };
+    }));
+
+    const pkg = {
+        package_id: packageId,
+        order_intent_id: intent.order_intent_id,
+        public_ref: intent.public_ref,
+        printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
+        printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+        status: 'CREATED',
+        control_plane_order_ref: intent.control_plane?.order_ref,
+        files: files,
+        preflight_summary: {
+            status: intent.preflight?.status,
+            risk_level: intent.preflight?.jobs[0]?.risk_level, // Simple aggregation
+            issue_count: intent.preflight?.jobs.reduce((sum, j) => sum + (j.issue_count || 0), 0),
+            jobs: intent.preflight?.jobs || []
+        },
+        production_specs: intent.offer.selected_offer_snapshot.specs || {},
+        customer_summary: {
+            name: intent.customer?.name,
+            email: intent.customer?.email,
+            shipping: intent.customer?.shipping_address
+        },
+        billing_summary: {
+            total_price: intent.totals?.total_price,
+            currency: intent.totals?.currency,
+            payment_status: intent.payment?.status,
+            payment_method: intent.payment?.method
+        },
+        production_queue: {
+            status: 'QUEUED',
+            printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
+            printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+            assigned_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            operator_notes: '',
+            production_notes: '',
+            shipment: null
+        },
+        access: {
+            token_id: signDispatchToken(packageId, intent.order_intent_id, intent.offer.selected_offer_snapshot.printer_id, expiresAt),
+            expires_at: expiresAt,
+            last_accessed_at: null,
+            access_count: 0
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+
+    return pkg;
+}
+
+// ---- Customer Tracking & Notification Helpers (v5.3 - Phase 13) ----
+
+/**
+ * Maps internal production_queue status to customer-friendly status.
+ */
+function mapProductionToCustomerStatus(prodStatus) {
+    switch (prodStatus) {
+        case 'QUEUED':
+        case 'REVIEWING': return 'SENT_TO_PRINTHOUSE';
+        case 'ACCEPTED': return 'ACCEPTED_BY_PRINTHOUSE';
+        case 'IN_PREPRESS': return 'IN_PREPRESS';
+        case 'IN_PRODUCTION': return 'IN_PRODUCTION';
+        case 'COMPLETED': return 'COMPLETED';
+        case 'SHIPPED': return 'SHIPPED';
+        case 'REJECTED': return 'REJECTED';
+        case 'CANCELLED': return 'CANCELLED';
+        default: return null;
+    }
+}
+
+/**
+ * Builds a safe, derived view of an order for customer tracking.
+ */
+async function buildCustomerTrackingView(intent, dispatchPkg = null) {
+    const queue = dispatchPkg?.production_queue || {};
+    const prodStatus = queue.status;
+    const customerStatusFromProd = mapProductionToCustomerStatus(prodStatus);
+
+    // Determine overall customer-friendly status
+    let status = 'ORDER_CREATED';
+    let headline = 'Order Received';
+    let description = 'We have received your order request and are preparing for validation.';
+    let next_action = 'Awaiting file validation.';
+
+    // ---- Exception & Issue Handling (v5.3 - Phase 14) ----
+    if (intent.exception && intent.exception.status !== 'RESOLVED' && intent.exception.blocking) {
+        status = 'ACTION_REQUIRED';
+        headline = 'Attention Required';
+        description = intent.exception.customer_message || "We encountered an issue processing your order.";
+        
+        if (intent.exception.status === 'CUSTOMER_REUPLOAD_REQUIRED') {
+            next_action = 'Please re-upload your production files to resolve technical issues.';
+        } else if (intent.exception.status === 'PRINTHOUSE_REJECTED') {
+            next_action = 'Our production team is reviewing a manufacturing constraint.';
+        } else {
+            next_action = 'Our team is reviewing your order details.';
+        }
+    } 
+    // ---- Standard Status Flow ----
+    else if (intent.status === 'CANCELLED') {
+        status = 'CANCELLED';
+        headline = 'Order Cancelled';
+        description = 'This order has been cancelled.';
+        next_action = 'Contact support if you believe this is an error.';
+    } else if (prodStatus === 'REJECTED') {
+        status = 'REJECTED';
+        headline = 'Order Rejected';
+        description = queue.rejection_reason || 'The printhouse was unable to accept this order.';
+        next_action = 'Contact support for details or to resubmit.';
+    } else if (customerStatusFromProd === 'SHIPPED') {
+        status = 'SHIPPED';
+        headline = 'Order Shipped';
+        description = 'Your books are on their way!';
+        next_action = 'Track your package using the tracking number provided.';
+    } else if (customerStatusFromProd === 'COMPLETED') {
+        status = 'COMPLETED';
+        headline = 'Production Complete';
+        description = 'Manufacturing is finished. Preparing for shipment.';
+        next_action = 'Awaiting carrier pickup.';
+    } else if (customerStatusFromProd === 'IN_PRODUCTION') {
+        status = 'IN_PRODUCTION';
+        headline = 'In Production';
+        description = 'Your books are currently being printed and bound.';
+        next_action = 'Stay tuned for shipment updates.';
+    } else if (customerStatusFromProd === 'IN_PREPRESS') {
+        status = 'IN_PREPRESS';
+        headline = 'In Pre-Press';
+        description = 'Plates are being made and files are being prepared for the press.';
+        next_action = 'Manufacturing starting soon.';
+    } else if (customerStatusFromProd === 'ACCEPTED_BY_PRINTHOUSE') {
+        status = 'ACCEPTED_BY_PRINTHOUSE';
+        headline = 'Accepted by Printhouse';
+        description = 'The manufacturing facility has reviewed and accepted your job.';
+        next_action = 'Awaiting production slot.';
+    } else if (customerStatusFromProd === 'SENT_TO_PRINTHOUSE') {
+        status = 'SENT_TO_PRINTHOUSE';
+        headline = 'Sent to Production';
+        description = 'Order has been dispatched to the selected printhouse for final review.';
+        next_action = 'Awaiting printer acceptance.';
+    } else if (intent.payment?.status === 'PAID') {
+        status = 'PAYMENT_CONFIRMED';
+        headline = 'Payment Confirmed';
+        description = 'Payment received. Order is being sent to the production queue.';
+        next_action = 'Awaiting printhouse dispatch.';
+    } else if (intent.invoice?.invoice_number) {
+        status = 'PAYMENT_PENDING';
+        headline = 'Awaiting Payment';
+        description = 'Invoice generated. Please complete payment to start production.';
+        next_action = 'Complete payment via the provided link.';
+    } else if (intent.preflight?.status === 'PASSED') {
+        status = 'FILES_APPROVED';
+        headline = 'Files Approved';
+        description = 'Your production files have passed automated preflight validation.';
+        next_action = 'Awaiting invoice generation.';
+    } else if (intent.lifecycle?.preflight_status === 'FAILED') {
+        // Fallback for pre-exception orders or direct preflight fails
+        status = 'ACTION_REQUIRED';
+        headline = 'File Issues Detected';
+        description = 'Automated preflight found issues that may affect print quality.';
+        next_action = 'Review preflight report and re-upload files.';
+    } else if (intent.lifecycle?.preflight_status === 'PROCESSING') {
+        status = 'FILES_VALIDATING';
+        headline = 'Validating Files';
+        description = 'Our engines are analyzing your PDFs for production readiness.';
+        next_action = 'Please wait while we check your assets.';
+    } else if (intent.production_files?.interior_pdf_file_id) {
+        status = 'FILES_RECEIVED';
+        headline = 'Files Received';
+        description = 'We have received your PDF assets.';
+        next_action = 'Awaiting preflight analysis.';
+    }
+
+    // Build timeline
+    const timeline = [];
+    const addStep = (key, label, stepStatus, ts, desc) => {
+        timeline.push({ key, label, status: stepStatus, timestamp: ts, description: desc });
+    };
+
+    addStep('CREATED', 'Order Created', 'DONE', intent.created_at, 'Marketplace intent recorded.');
+    
+    const filesStatus = (intent.lifecycle?.preflight_status === 'PASSED') ? 'DONE' : (intent.production_files?.interior_pdf_file_id ? 'CURRENT' : 'PENDING');
+    addStep('FILES', 'Files Validated', filesStatus, intent.preflight?.completed_at, 'PDF production readiness check.');
+
+    const payStatus = (intent.payment?.status === 'PAID') ? 'DONE' : (intent.invoice?.invoice_number ? 'CURRENT' : 'PENDING');
+    addStep('PAYMENT', 'Payment', payStatus, intent.payment?.paid_at, 'Financial settlement.');
+
+    const prodStatusTimeline = customerStatusFromProd === 'SHIPPED' || customerStatusFromProd === 'COMPLETED' ? 'DONE' : (customerStatusFromProd ? 'CURRENT' : 'PENDING');
+    addStep('PRODUCTION', 'Production', prodStatusTimeline, queue.accepted_at, 'Manufacturing lifecycle.');
+
+    const shipStatus = customerStatusFromProd === 'SHIPPED' ? 'DONE' : 'PENDING';
+    addStep('SHIPPING', 'Shipping', shipStatus, queue.shipped_at, 'Logistics and delivery.');
+
+    return {
+        public_ref: intent.public_ref,
+        order_intent_id: intent.order_intent_id,
+        customer_status: status,
+        headline,
+        description,
+        next_action,
+        customer_message: queue.customer_message || intent.customer_message || null,
+        timeline,
+        payment: {
+            status: intent.payment?.status || 'PENDING',
+            provider: intent.payment?.method,
+            invoice_number: intent.invoice?.invoice_number,
+            amount: intent.totals?.total_price,
+            currency: intent.totals?.currency
+        },
+        production: {
+            status: customerStatusFromProd || 'PENDING',
+            printhouse_name: queue.printhouse_name,
+            accepted_at: queue.accepted_at,
+            started_production_at: queue.started_production_at,
+            completed_at: queue.completed_at
+        },
+        shipping: {
+            carrier: queue.shipment?.carrier,
+            tracking_number: queue.shipment?.tracking_number,
+            shipped_at: queue.shipped_at,
+            delivery_estimate: queue.shipment?.delivery_estimate
+        },
+        files: {
+            interior_status: intent.lifecycle?.preflight_status,
+            cover_status: intent.lifecycle?.preflight_status,
+            preflight_status: intent.preflight?.status
+        },
+        created_at: intent.created_at,
+        updated_at: intent.updated_at
+    };
+}
+
+/**
+ * Orchestrates sending customer notifications.
+ */
+async function sendOrderNotification(intent, eventType, context = {}) {
+    if (!NOTIFICATIONS_ENABLED) {
+        console.log(`[NOTIFICATION_SKIPPED_DISABLED] intent=${intent.order_intent_id} event=${eventType}`);
+        await repositories.notifications.create({
+            notification_id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+            order_intent_id: intent.order_intent_id,
+            public_ref: intent.public_ref,
+            recipient_email: intent.customer?.email,
+            event_type: eventType,
+            provider: NOTIFICATION_PROVIDER,
+            status: 'SKIPPED_DISABLED',
+            subject: `[DISABLED] ${eventType}`,
+            payload: context,
+            created_at: new Date().toISOString()
+        });
+        return;
+    }
+
+    const recipient = intent.customer?.email;
+    if (!recipient) {
+        console.warn(`[NOTIFICATION_FAILED_NO_RECIPIENT] intent=${intent.order_intent_id} event=${eventType}`);
+        return;
+    }
+
+    // Idempotency Check
+    const existing = await repositories.notifications.findDuplicate(intent.order_intent_id, eventType);
+    if (existing) {
+        console.log(`[NOTIFICATION_DUPLICATE_SKIPPED] intent=${intent.order_intent_id} event=${eventType}`);
+        return;
+    }
+
+    const trackingUrl = `${PUBLIC_APP_BASE_URL}/?order=${intent.order_intent_id}`;
+    let subject = `Order Update: ${intent.public_ref}`;
+    let body = `Hello ${intent.customer?.name || 'Customer'},\n\nYour order ${intent.public_ref} has a new update: ${eventType}.\n\nTrack your order here: ${trackingUrl}\n\nThank you for choosing PrintPricePro.`;
+
+    // Specialized content based on event type
+    switch (eventType) {
+        case 'ORDER_INTENT_CREATED':
+            subject = `Order Received: ${intent.public_ref}`;
+            body = `Thank you for your order! We have received your request and production files. We are now validating the assets.\n\nRef: ${intent.public_ref}\nTracking: ${trackingUrl}`;
+            break;
+        case 'PAYMENT_CONFIRMED':
+            subject = `Payment Confirmed: ${intent.public_ref}`;
+            body = `Your payment has been successfully processed. Your order is now being dispatched to the production facility.\n\nRef: ${intent.public_ref}\nTracking: ${trackingUrl}`;
+            break;
+        case 'ORDER_SHIPPED':
+            subject = `Order Shipped! ${intent.public_ref}`;
+            body = `Great news! Your books have been shipped.\n\nRef: ${intent.public_ref}\nTracking: ${trackingUrl}`;
+            break;
+        case 'PRINTHOUSE_REJECTED':
+            subject = `Action Required: Order Issue ${intent.public_ref}`;
+            body = `We encountered an issue with your order at the production facility. Please check the tracking page for details.\n\nRef: ${intent.public_ref}\nTracking: ${trackingUrl}`;
+            break;
+    }
+
+    const notificationId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    await repositories.notifications.create({
+        notification_id: notificationId,
+        order_intent_id: intent.order_intent_id,
+        public_ref: intent.public_ref,
+        recipient_email: recipient,
+        event_type: eventType,
+        provider: NOTIFICATION_PROVIDER,
+        status: 'PENDING',
+        subject,
+        payload: { ...context, trackingUrl, body },
+        created_at: new Date().toISOString()
+    });
+
+    try {
+        if (NOTIFICATION_PROVIDER === 'console') {
+            console.log(`\n--- [OUTGOING_NOTIFICATION] ---\nTO: ${recipient}\nSUBJECT: ${subject}\nBODY:\n${body}\n-------------------------------\n`);
+            await repositories.notifications.updateStatus(notificationId, 'SENT');
+        } else if (NOTIFICATION_PROVIDER === 'smtp') {
+            // Placeholder for real SMTP logic
+            if (!SMTP_CONFIG.host) {
+                throw new Error("SMTP_HOST_NOT_CONFIGURED");
+            }
+            console.log(`[SMTP_NOT_IMPLEMENTED_YET] Simulated send to ${recipient}`);
+            await repositories.notifications.updateStatus(notificationId, 'SENT');
+        } else {
+            throw new Error("UNKNOWN_PROVIDER");
+        }
+
+        console.log(`[NOTIFICATION_SENT] id=${notificationId} event=${eventType}`);
+        
+        await repositories.auditEvents.append({
+            entity_type: 'NOTIFICATION',
+            entity_id: notificationId,
+            event_type: 'NOTIFICATION_SENT',
+            payload: { order_intent_id: intent.order_intent_id, event_type: eventType }
+        });
+
+    } catch (err) {
+        console.error(`[NOTIFICATION_FAILED] id=${notificationId} error=${err.message}`);
+        await repositories.notifications.updateStatus(notificationId, 'FAILED', { error: { message: err.message } });
+    }
+}
+
+/**
+ * POST /api/order-intents/:id/dispatch-package/create
+ * Creates a printhouse handoff package for a paid/validated order.
+ */
+app.post('/api/order-intents/:id/dispatch-package/create', async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getById(req.params.id);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // 1. Authorization
+        const identity = resolveRequestIdentity(req);
+        if (!identity.isAdmin && !assertOrderIntentAccess(req, intent)) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_DISPATCH_CREATION" });
+        }
+
+        // 2. Gating
+        if (intent.payment?.status !== 'PAID') {
+            console.warn(`[DISPATCH_PACKAGE_REJECTED_PAYMENT_NOT_CONFIRMED] id=${intent.order_intent_id}`);
+            return res.status(409).json({ ok: false, error: "PAYMENT_NOT_CONFIRMED" });
+        }
+        if (intent.preflight?.status !== 'PASSED') {
+            console.warn(`[DISPATCH_PACKAGE_REJECTED_PREFLIGHT_NOT_PASSED] id=${intent.order_intent_id}`);
+            return res.status(409).json({ ok: false, error: "PREFLIGHT_NOT_PASSED" });
+        }
+        if (intent.control_plane?.status !== 'CREATED') {
+            console.warn(`[DISPATCH_PACKAGE_REJECTED_CONTROL_PLANE_NOT_CREATED] id=${intent.order_intent_id}`);
+            return res.status(409).json({ ok: false, error: "CONTROL_PLANE_ORDER_NOT_CREATED" });
+        }
+
+        // 3. Idempotency
+        const existing = await repositories.dispatchPackages.getByOrderIntentId(intent.order_intent_id);
+        if (existing && existing.status !== 'REVOKED') {
+            console.log(`[DISPATCH_PACKAGE_IDEMPOTENT_RETURN] id=${existing.package_id}`);
+            return res.json({ ok: true, already_exists: true, package: existing });
+        }
+
+        // 4. Create Package
+        console.log(`[DISPATCH_PACKAGE_CREATE_REQUEST] intent=${intent.order_intent_id}`);
+        const pkg = await buildDispatchPackage(intent);
+        await repositories.dispatchPackages.create(pkg);
+
+        // 5. Update Intent
+        intent.printhouse_handoff.status = 'READY_FOR_PRINTHOUSE';
+        intent.lifecycle.printhouse_handoff_status = 'READY_FOR_PRINTHOUSE';
+        intent.dispatch_package_id = pkg.package_id;
+        await repositories.orderIntents.update(intent.order_intent_id, intent);
+
+        // 6. Optional Control Plane Update
+        if (CONTROL_PLANE_DISPATCH_PACKAGE_UPDATE_ENABLED) {
+            try {
+                const cpUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/orders/${intent.control_plane.order_ref}/dispatch-package`;
+                await axios.post(cpUrl, {
+                    package_id: pkg.package_id,
+                    status: pkg.status,
+                    expires_at: pkg.access.expires_at,
+                    files: pkg.files.map(f => ({ file_id: f.file_id, role: f.role, checksum: f.checksum }))
+                }, { headers: buildControlPlaneHeaders() });
+                console.log(`[DISPATCH_PACKAGE_CP_SYNC_SUCCESS] id=${pkg.package_id}`);
+            } catch (e) {
+                console.warn(`[DISPATCH_PACKAGE_CP_SYNC_FAILED] id=${pkg.package_id} error=${e.message}`);
+            }
+        }
+
+        await repositories.auditEvents.append({
+            entity_type: 'ORDER_INTENT',
+            entity_id: intent.order_intent_id,
+            event_type: 'DISPATCH_PACKAGE_CREATED',
+            actor_type: identity.isAdmin ? 'ADMIN' : 'SYSTEM',
+            payload: { package_id: pkg.package_id }
+        });
+
+        console.log(`[DISPATCH_PACKAGE_CREATED] id=${pkg.package_id}`);
+        res.json({ ok: true, package: pkg });
+
+    } catch (err) {
+        console.error(`[DISPATCH_PACKAGE_FAILED] error=${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR", message: err.message });
+    }
+});
+
+/**
+ * GET /api/dispatch-packages/:packageId
+ * Retrieves sanitized dispatch package metadata for printhouses.
+ */
+app.get('/api/dispatch-packages/:packageId', async (req, res) => {
+    try {
+        const pkg = await repositories.dispatchPackages.getById(req.params.packageId);
+        if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        if (!await assertDispatchPackageAccess(req, pkg)) {
+            console.warn(`[DISPATCH_PACKAGE_ACCESS_DENIED] id=${pkg.package_id} ip=${req.ip}`);
+            await repositories.auditEvents.append({
+                entity_type: 'DISPATCH_PACKAGE',
+                entity_id: pkg.package_id,
+                event_type: 'DISPATCH_PACKAGE_ACCESS_DENIED',
+                actor_type: 'ANONYMOUS',
+                payload: { ip: req.ip }
+            });
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_DISPATCH_PACKAGE_ACCESS" });
+        }
+
+        // Check expiration
+        if (new Date(pkg.access.expires_at) < new Date()) {
+            await repositories.dispatchPackages.updateStatus(pkg.package_id, 'EXPIRED');
+            return res.status(403).json({ ok: false, error: "DISPATCH_PACKAGE_EXPIRED" });
+        }
+
+        await repositories.dispatchPackages.incrementAccess(pkg.package_id);
+        console.log(`[DISPATCH_PACKAGE_ACCESS_GRANTED] id=${pkg.package_id}`);
+
+        // Sanitize for return
+        const { access, ...sanitized } = pkg;
+        res.json({ ok: true, package: sanitized });
+
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * GET /api/dispatch-packages/:packageId/files/:fileId
+ * Streams a production file from a dispatch package.
+ */
+app.get('/api/dispatch-packages/:packageId/files/:fileId', async (req, res) => {
+    try {
+        const pkg = await repositories.dispatchPackages.getById(req.params.packageId);
+        if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        if (!await assertDispatchPackageAccess(req, pkg)) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_DISPATCH_PACKAGE_ACCESS" });
+        }
+
+        const fileMeta = pkg.files.find(f => f.file_id === req.params.fileId);
+        if (!fileMeta) return res.status(404).json({ ok: false, error: "FILE_NOT_FOUND_IN_PACKAGE" });
+
+        const filePath = path.join(PRODUCTION_FILES_DIR, fileMeta.storage_key);
+        if (!fs.existsSync(filePath)) {
+            console.error(`[DISPATCH_FILE_MISSING_ON_DISK] id=${fileMeta.file_id} path=${filePath}`);
+            return res.status(404).json({ ok: false, error: "DISPATCH_FILE_NOT_FOUND" });
+        }
+
+        await repositories.auditEvents.append({
+            entity_type: 'DISPATCH_PACKAGE',
+            entity_id: pkg.package_id,
+            event_type: 'DISPATCH_FILE_ACCESSED',
+            actor_type: 'PRINTHOUSE',
+            payload: { file_id: fileMeta.file_id, role: fileMeta.role }
+        });
+
+        console.log(`[DISPATCH_FILE_STREAMED] package=${pkg.package_id} file=${fileMeta.file_id}`);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileMeta.filename}"`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        
+        fs.createReadStream(filePath).pipe(res);
+
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * POST /api/dispatch-packages/:packageId/revoke
+ * Administrative endpoint to revoke a dispatch package.
+ */
+app.post('/api/dispatch-packages/:packageId/revoke', adminOnly, async (req, res) => {
+    try {
+        const pkg = await repositories.dispatchPackages.getById(req.params.packageId);
+        if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        await repositories.dispatchPackages.updateStatus(pkg.package_id, 'REVOKED');
+        
+        await repositories.auditEvents.append({
+            entity_type: 'DISPATCH_PACKAGE',
+            entity_id: pkg.package_id,
+            event_type: 'DISPATCH_PACKAGE_REVOKED',
+            actor_type: 'ADMIN',
+            payload: { package_id: pkg.package_id }
+        });
+
+        console.log(`[DISPATCH_PACKAGE_REVOKED] id=${pkg.package_id}`);
+        res.json({ ok: true, status: 'REVOKED' });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+// ---- Printhouse Production Queue Endpoints (v5.3 - Phase 12) ----
+
+/**
+ * GET /api/printhouse/queue
+ * Lists jobs assigned to a printhouse.
+ */
+app.get('/api/printhouse/queue', async (req, res) => {
+    try {
+        const { printhouse_id, status, limit = 50, offset = 0 } = req.query;
+        const identity = resolveRequestIdentity(req);
+
+        // Access Control: Admin can see all, Printhouse can only see its own
+        // If printhouse auth existed, we'd extract its ID from token.
+        // For now, we enforce that a printhouse_id must be provided or it's admin.
+        if (!identity.isAdmin && !printhouse_id) {
+            return res.status(403).json({ ok: false, error: "PRINTHOUSE_ID_REQUIRED" });
+        }
+
+        // If not admin, verify printhouse_id matches (once full auth is implemented)
+        // For now, we allow filtering if identity.isAdmin or if a token is used.
+
+        const jobs = await repositories.dispatchPackages.listByPrinthouse(printhouse_id, { status, limit, offset });
+        
+        // Map to summary format
+        const summary = jobs.map(j => ({
+            package_id: j.package_id,
+            order_intent_id: j.order_intent_id,
+            public_ref: j.public_ref,
+            control_plane_order_ref: j.control_plane_order_ref,
+            printhouse_id: j.printhouse_id,
+            printhouse_name: j.printhouse_name,
+            production_queue_status: j.production_queue?.status,
+            payment_status: j.billing_summary?.payment_status,
+            preflight_status: j.preflight_summary?.status,
+            dispatch_package_status: j.status,
+            created_at: j.created_at,
+            updated_at: j.updated_at,
+            customer_summary: j.customer_summary,
+            production_specs_summary: j.production_specs,
+            files_summary: j.files.map(f => ({ role: f.role, filename: f.filename }))
+        }));
+
+        await repositories.auditEvents.append({
+            entity_type: 'PRINTHOUSE',
+            entity_id: printhouse_id || 'ALL',
+            event_type: 'PRINTHOUSE_QUEUE_LISTED',
+            actor_type: identity.isAdmin ? 'ADMIN' : 'PRINTHOUSE',
+            payload: { status_filter: status }
+        });
+
+        console.log(`[PRINTHOUSE_QUEUE_LIST] printhouse=${printhouse_id || 'ALL'} count=${summary.length}`);
+        res.json({ ok: true, jobs: summary });
+
+    } catch (err) {
+        console.error(`[PRINTHOUSE_QUEUE_LIST_FAILED] ${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * GET /api/printhouse/queue/:packageId
+ * Detailed job view for a printhouse.
+ */
+app.get('/api/printhouse/queue/:packageId', async (req, res) => {
+    try {
+        const pkg = await repositories.dispatchPackages.getById(req.params.packageId);
+        if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // Access Control
+        if (!await assertDispatchPackageAccess(req, pkg)) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_QUEUE_ACCESS" });
+        }
+
+        await repositories.auditEvents.append({
+            entity_type: 'DISPATCH_PACKAGE',
+            entity_id: pkg.package_id,
+            event_type: 'PRINTHOUSE_JOB_VIEWED',
+            actor_type: 'PRINTHOUSE'
+        });
+
+        console.log(`[PRINTHOUSE_JOB_DETAIL] id=${pkg.package_id}`);
+        
+        // Return full metadata but exclude secrets
+        const { access, ...job } = pkg;
+        res.json({ ok: true, job });
+
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * POST /api/printhouse/queue/:packageId/status
+ * Updates production queue status for a job.
+ */
+app.post('/api/printhouse/queue/:packageId/status', async (req, res) => {
+    try {
+        const pkg = await repositories.dispatchPackages.getById(req.params.packageId);
+        if (!pkg) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // Access Control
+        const identity = resolveRequestIdentity(req);
+        if (!await assertDispatchPackageAccess(req, pkg)) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_STATUS_UPDATE" });
+        }
+
+        const { status: requestedStatus, operator_notes, rejection_reason, production_notes, shipment } = req.body;
+        const currentStatus = pkg.production_queue?.status || 'QUEUED';
+
+        // 1. Transition Validation
+        const validTransitions = {
+            'QUEUED': ['REVIEWING', 'REJECTED'],
+            'REVIEWING': ['ACCEPTED', 'REJECTED'],
+            'REJECTED': [],
+            'ACCEPTED': ['IN_PREPRESS', 'CANCELLED'],
+            'IN_PREPRESS': ['IN_PRODUCTION', 'CANCELLED'],
+            'IN_PRODUCTION': ['COMPLETED', 'CANCELLED'],
+            'COMPLETED': ['SHIPPED'],
+            'SHIPPED': [],
+            'CANCELLED': []
+        };
+
+        const allowed = validTransitions[currentStatus] || [];
+        
+        // Admin can override some things, but mostly we follow the rules
+        if (!allowed.includes(requestedStatus) && !identity.isAdmin) {
+            console.warn(`[PRINTHOUSE_STATUS_REJECTED_INVALID_TRANSITION] id=${pkg.package_id} from=${currentStatus} to=${requestedStatus}`);
+            return res.status(400).json({
+                ok: false,
+                error: "INVALID_PRODUCTION_STATUS_TRANSITION",
+                current_status: currentStatus,
+                requested_status: requestedStatus
+            });
+        }
+
+        // 2. Data Validation
+        if (requestedStatus === 'REJECTED' && !rejection_reason) {
+            return res.status(400).json({ ok: false, error: "REJECTION_REASON_REQUIRED" });
+        }
+
+        // 3. Prepare Update
+        const now = new Date().toISOString();
+        const updatedQueue = {
+            ...pkg.production_queue,
+            status: requestedStatus,
+            updated_at: now,
+            operator_notes: operator_notes !== undefined ? operator_notes : pkg.production_queue?.operator_notes,
+            production_notes: production_notes !== undefined ? production_notes : pkg.production_queue?.production_notes,
+            shipment: shipment !== undefined ? shipment : pkg.production_queue?.shipment
+        };
+
+        if (requestedStatus === 'REVIEWING') updatedQueue.reviewed_at = now;
+        if (requestedStatus === 'ACCEPTED') updatedQueue.accepted_at = now;
+        if (requestedStatus === 'REJECTED') updatedQueue.rejected_at = now;
+        if (requestedStatus === 'IN_PREPRESS') updatedQueue.started_prepress_at = now;
+        if (requestedStatus === 'IN_PRODUCTION') updatedQueue.started_production_at = now;
+        if (requestedStatus === 'COMPLETED') updatedQueue.completed_at = now;
+        if (requestedStatus === 'SHIPPED') updatedQueue.shipped_at = now;
+        
+        if (rejection_reason) updatedQueue.rejection_reason = rejection_reason;
+
+        // 4. Persistence
+        await repositories.dispatchPackages.updateProductionQueue(pkg.package_id, updatedQueue);
+
+        // 5. Downstream Updates (Intent & Control Plane)
+        const intent = await repositories.orderIntents.getById(pkg.order_intent_id);
+        if (intent) {
+            let intentChanged = false;
+
+            if (requestedStatus === 'ACCEPTED') {
+                intent.printhouse_handoff.status = 'ACCEPTED';
+                intent.lifecycle.printhouse_handoff_status = 'READY'; // Or SENT
+                intentChanged = true;
+            } else if (requestedStatus === 'REJECTED') {
+                intent.printhouse_handoff.status = 'REJECTED';
+                intent.printhouse_handoff.error = rejection_reason;
+                intent.lifecycle.printhouse_handoff_status = 'REJECTED';
+                intentChanged = true;
+            } else if (requestedStatus === 'SHIPPED') {
+                intent.status = 'COMPLETED'; // Or SHIPPED if model supports it
+                intentChanged = true;
+            }
+
+            if (intentChanged) {
+                await repositories.orderIntents.update(intent.order_intent_id, intent);
+            }
+
+            // 6. Control Plane Sync
+            if (CONTROL_PLANE_PRODUCTION_STATUS_SYNC_ENABLED) {
+                try {
+                    const cpUrl = CONTROL_PLANE_PRODUCTION_STATUS_ENDPOINT.replace(':orderRef', intent.control_plane?.order_ref || intent.public_ref);
+                    await axios.post(`${CONTROL_PLANE_BASE_URL}${cpUrl}`, {
+                        package_id: pkg.package_id,
+                        order_intent_id: intent.order_intent_id,
+                        public_ref: intent.public_ref,
+                        status: requestedStatus,
+                        operator_notes,
+                        rejection_reason,
+                        shipment,
+                        updated_at: now
+                    }, { headers: buildControlPlaneHeaders() });
+                    console.log(`[PRINTHOUSE_STATUS_SYNCED] id=${pkg.package_id} status=${requestedStatus}`);
+                } catch (e) {
+                    console.warn(`[PRINTHOUSE_STATUS_SYNC_FAILED] id=${pkg.package_id} error=${e.message}`);
+                    updatedQueue.last_sync_error = e.message;
+                    await repositories.dispatchPackages.updateProductionQueue(pkg.package_id, updatedQueue);
+                }
+            }
+        }
+
+        await repositories.auditEvents.append({
+            entity_type: 'DISPATCH_PACKAGE',
+            entity_id: pkg.package_id,
+            event_type: `PRINTHOUSE_JOB_${requestedStatus}`,
+            actor_type: identity.isAdmin ? 'ADMIN' : 'PRINTHOUSE',
+            payload: { from: currentStatus, to: requestedStatus, rejection_reason }
+        });
+
+        console.log(`[PRINTHOUSE_STATUS_UPDATED] id=${pkg.package_id} from=${currentStatus} to=${requestedStatus}`);
+
+        // v5.3: Trigger Notification (Phase 13)
+        if (intent) {
+            let eventToNotify = null;
+            if (requestedStatus === 'ACCEPTED') eventToNotify = 'PRINTHOUSE_ACCEPTED';
+            if (requestedStatus === 'IN_PRODUCTION') eventToNotify = 'PRODUCTION_STARTED';
+            if (requestedStatus === 'COMPLETED') eventToNotify = 'PRODUCTION_COMPLETED';
+            if (requestedStatus === 'SHIPPED') eventToNotify = 'ORDER_SHIPPED';
+            if (requestedStatus === 'REJECTED') eventToNotify = 'PRINTHOUSE_REJECTED';
+
+            if (eventToNotify) {
+                sendOrderNotification(intent, eventToNotify, { status: requestedStatus }).catch(e => console.error(`[NOTIFICATION_CRASH_PROTECT] ${e.message}`));
+            }
+
+            // v5.3: Trigger Exception (Phase 14)
+            if (requestedStatus === 'REJECTED') {
+                await openOrderIntentException(intent, {
+                    status: "PRINTHOUSE_REJECTED",
+                    reason_code: "PRINTHOUSE_REJECTION",
+                    reason_message: rejection_reason || "No reason provided by printhouse.",
+                    customer_message: "The selected production partner cannot produce this order as submitted. Our team is reviewing next steps.",
+                    source: "PRINTHOUSE",
+                    blocking: true
+                });
+            }
+        }
+
+        res.json({ ok: true, status: requestedStatus, production_queue: updatedQueue });
+
+    } catch (err) {
+        console.error(`[PRINTHOUSE_STATUS_UPDATE_FAILED] ${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * POST /api/order-intents/:id/payment/mark-paid
+ * Administrative endpoint to manually confirm bank transfer payments.
+ */
+app.post('/api/order-intents/:id/payment/mark-paid', adminOnly, async (req, res) => {
+    const intent = await repositories.orderIntents.getById(req.params.id);
+    if (!intent) return res.status(404).json({ error: "NOT_FOUND" });
+
+    console.log(`[PAYMENT_MARK_PAID_REQUEST] id=${intent.order_intent_id}`);
+
+    intent.payment.status = 'PAID';
+    intent.lifecycle.payment_status = 'PAID';
+    intent.updated_at = new Date().toISOString();
+    await repositories.orderIntents.update(intent.order_intent_id, intent);
+    
+    console.log(`[PAYMENT_MARK_PAID_ACCEPTED] id=${intent.order_intent_id}`);
+
+    if (AUTO_FINALIZE_AFTER_PAYMENT) {
+        console.log(`[AUTO_FINALIZE_AFTER_PAYMENT_TRIGGERED] id=${intent.order_intent_id}`);
+        try {
+            await finalizeOrderIntent(intent.order_intent_id);
+        } catch (e) {
+            console.error(`[AUTO_FINALIZE_FAILED] id=${intent.order_intent_id} error=${e.message}`);
+        }
+    }
+
+    res.json({ ok: true, payment_status: "PAID", auto_finalize_triggered: AUTO_FINALIZE_AFTER_PAYMENT });
+});
+
+// ---- Operational Health & Cleanup (v5.3 - Phase 9 Hardening) ----
+
+/**
+ * Identifies and cleans up orphaned production files.
+ */
+/**
+ * Identifies and cleans up orphaned production files.
+ */
+async function cleanupOrphanProductionFiles() {
+    console.log(`[CLEANUP_ORPHAN_FILES_STARTED] retention=${PRODUCTION_FILE_RETENTION_HOURS}h`);
+    const cutoff = new Date(Date.now() - (PRODUCTION_FILE_RETENTION_HOURS * 60 * 60 * 1000));
+    
+    const orphans = await repositories.productionFiles.findOrphans(cutoff);
+    let count = 0;
+
+    for (const file of orphans) {
+        console.log(`[CLEANUP_ORPHAN_FILE] id=${file.file_id}`);
+        
+        // Delete local file if it exists and is on disk
+        if (file.storage?.key) {
+            const filePath = path.join(PRODUCTION_FILES_DIR, file.storage.key);
+            if (fs.existsSync(filePath)) {
+                try {
+                    fs.unlinkSync(filePath);
+                } catch (e) {
+                    console.error(`[CLEANUP_DISK_FAILED] file=${file.storage.key} error=${e.message}`);
+                }
+            }
+        }
+
+        await repositories.productionFiles.markDeleted(file.file_id, 'ORPHAN_RETENTION_EXPIRED');
+        
+        await repositories.auditEvents.append({
+            entity_type: 'PRODUCTION_FILE',
+            entity_id: file.file_id,
+            event_type: 'CLEANUP_DELETED',
+            actor_type: 'SYSTEM',
+            payload: { reason: 'ORPHAN_RETENTION_EXPIRED' }
+        });
+
+        count++;
+    }
+
+    console.log(`[CLEANUP_ORPHAN_FILES_COMPLETED] removed=${count}`);
+    return count;
+}
+
+/**
+ * Identifies and cleans up abandoned order intents.
+ */
+async function cleanupAbandonedOrderIntents() {
+    console.log(`[CLEANUP_ORDER_INTENTS_STARTED] retention=${ORDER_INTENT_RETENTION_DAYS}d`);
+    const cutoff = new Date(Date.now() - (ORDER_INTENT_RETENTION_DAYS * 24 * 60 * 60 * 1000));
+    
+    const abandoned = await repositories.orderIntents.findAbandoned(cutoff);
+    let count = 0;
+
+    for (const intent of abandoned) {
+        console.log(`[CLEANUP_ABANDONED_INTENT] id=${intent.order_intent_id}`);
+        
+        await repositories.orderIntents.updateStatus(intent.order_intent_id, 'CANCELLED', {
+            final_order_status: 'FAILED',
+            cancellation_reason: 'ABANDONED_RETENTION_EXPIRED'
+        });
+
+        await repositories.auditEvents.append({
+            entity_type: 'ORDER_INTENT',
+            entity_id: intent.order_intent_id,
+            event_type: 'CLEANUP_CANCELLED',
+            actor_type: 'SYSTEM',
+            payload: { reason: 'ABANDONED_RETENTION_EXPIRED' }
+        });
+
+        count++;
+    }
+
+    console.log(`[CLEANUP_ORDER_INTENTS_COMPLETED] cancelled=${count}`);
+    return count;
+}
+
+/**
+ * GET /api/health
+ * Public health check.
+ */
+app.get('/api/health', (req, res) => {
+    res.json({
+        ok: true,
+        service: "printpricepro-bookprice",
+        uptime: Math.floor((Date.now() - APP_START_TIME) / 1000),
+        env: process.env.NODE_ENV || 'development',
+        features: {
+            preflight_enabled: PREFLIGHT_ENABLED,
+            payments_enabled: PAYMENTS_ENABLED,
+            payment_provider: PAYMENT_PROVIDER,
+            control_plane_handoff_enabled: CONTROL_PLANE_ORDER_HANDOFF_ENABLED,
+            cleanup_enabled: CLEANUP_ENABLED
+        }
+    });
+});
+
+/**
+ * GET /api/admin/health/registries
+ * Integrity check for registries.
+ */
+app.get('/api/admin/health/registries', adminOnly, async (req, res) => {
+    const filesHealth = await repositories.productionFiles.health();
+    const intentsHealth = await repositories.orderIntents.health();
+    const sessionsHealth = await repositories.offerSessions.health();
+
+    const health = {
+        timestamp: new Date().toISOString(),
+        adapter: repositories.adapter,
+        registries: {
+            production_files: filesHealth,
+            order_intents: intentsHealth,
+            offer_sessions: sessionsHealth
+        }
+    };
+
+    console.log(`[REGISTRY_HEALTH_CHECK] ip=${req.ip} adapter=${repositories.adapter}`);
+    res.json({ ok: true, health });
+});
+
+/**
+ * GET /api/admin/health/persistence
+ * Detailed persistence layer health check.
+ */
+app.get('/api/admin/health/persistence', adminOnly, async (req, res) => {
+    try {
+        const prodFiles = await repositories.productionFiles.health();
+        const offerSessions = await repositories.offerSessions.health();
+        const orderIntents = await repositories.orderIntents.health();
+        const dispatchPackages = await repositories.dispatchPackages.health();
+        const auditEvents = await repositories.auditEvents.health();
+
+        res.json({
+            ok: true,
+            adapter: repositories.adapter,
+            repositories: {
+                production_files: prodFiles,
+                offer_sessions: offerSessions,
+                order_intents: orderIntents,
+                dispatch_packages: dispatchPackages,
+                audit_events: auditEvents
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// ---- Exception Orchestration (v5.3 - Phase 14) ----
+
+/**
+ * Opens or updates an exception for an Order Intent.
+ */
+async function openOrderIntentException(orderIntent, params) {
+    const { 
+        status, reason_code, reason_message, customer_message, 
+        operator_notes, source, blocking = true, actor_id = 'SYSTEM'
+    } = params;
+
+    const timestamp = new Date().toISOString();
+    const exception = {
+        status,
+        reason_code,
+        reason_message,
+        customer_message,
+        operator_notes: operator_notes || orderIntent.exception?.operator_notes,
+        source,
+        blocking,
+        created_at: orderIntent.exception?.created_at || timestamp,
+        updated_at: timestamp,
+        actor_id
+    };
+
+    console.log(`[EXCEPTION_OPENED] intent=${orderIntent.order_intent_id} status=${status} source=${source} blocking=${blocking}`);
+    
+    await repositories.orderIntents.update(orderIntent.order_intent_id, { exception });
+
+    await repositories.auditEvents.append({
+        entity_type: 'ORDER_INTENT',
+        entity_id: orderIntent.order_intent_id,
+        event_type: 'EXCEPTION_OPENED',
+        actor_id,
+        payload: { status, reason_code, source, blocking }
+    });
+
+    return exception;
+}
+
+/**
+ * Resolves an exception for an Order Intent.
+ */
+async function resolveOrderIntentException(orderIntent, resolution) {
+    const { type, notes, resolved_by = 'SYSTEM' } = resolution;
+    const timestamp = new Date().toISOString();
+
+    const exception = {
+        ...orderIntent.exception,
+        status: 'RESOLVED',
+        blocking: false,
+        updated_at: timestamp,
+        resolved_at: timestamp,
+        resolution: {
+            type,
+            notes,
+            resolved_by,
+            resolved_at: timestamp
+        }
+    };
+
+    console.log(`[EXCEPTION_RESOLVED] intent=${orderIntent.order_intent_id} type=${type} by=${resolved_by}`);
+
+    await repositories.orderIntents.update(orderIntent.order_intent_id, { exception });
+
+    await repositories.auditEvents.append({
+        entity_type: 'ORDER_INTENT',
+        entity_id: orderIntent.order_intent_id,
+        event_type: 'EXCEPTION_RESOLVED',
+        actor_id: resolved_by,
+        payload: { resolution_type: type }
+    });
+
+    return exception;
+}
+
+/**
+ * POST /api/order-intents/:id/files/:role/replace
+ * Replaces a production file in an order intent.
+ */
+app.post('/api/order-intents/:id/files/:role/replace', upload.single('file'), async (req, res) => {
+    try {
+        const orderIntentId = req.params.id;
+        const role = req.params.role;
+        const replacement_reason = req.body.replacement_reason || "Customer reupload";
+
+        if (!['INTERIOR_PDF', 'COVER_PDF'].includes(role)) {
+            return res.status(400).json({ ok: false, error: "INVALID_ROLE" });
+        }
+
+        const intent = await repositories.orderIntents.getById(orderIntentId);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // Security & Status Check
+        const identity = resolveRequestIdentity(req);
+        const isOwner = assertOrderIntentAccess(req, intent);
+        const isAdmin = identity.isAdmin;
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+        }
+
+        // Only allowed if in action required or operator review
+        const allowedStatuses = ['CUSTOMER_REUPLOAD_REQUIRED', 'ACTION_REQUIRED', 'OPERATOR_REVIEW_REQUIRED'];
+        if (!intent.exception || !allowedStatuses.includes(intent.exception.status)) {
+            if (!isAdmin) {
+                 return res.status(400).json({ ok: false, error: "REPLACEMENT_NOT_ALLOWED_NOW" });
+            }
+        }
+
+        // Prevent replacement after production starts
+        const blockingStatuses = ['IN_PRODUCTION', 'COMPLETED', 'SHIPPED', 'CANCELLED'];
+        if (blockingStatuses.includes(intent.status)) {
+            return res.status(400).json({ ok: false, error: "ORDER_STATE_BLOCKS_REPLACEMENT" });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ ok: false, error: "MISSING_FILE" });
+        }
+
+        // 1. Validate Upload (Existing logic)
+        const validationResult = await performHardenedPDFValidation(req.file.path, role);
+        if (!validationResult.ok) {
+             // Cleanup failed upload
+             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+             return res.status(400).json({ ok: false, error: "VALIDATION_FAILED", details: validationResult });
+        }
+
+        // 2. Register New Production File
+        const oldFileId = intent.production_files?.[role === 'INTERIOR_PDF' ? 'interior_pdf_file_id' : 'cover_pdf_file_id'];
+        const newFileId = `pf_repl_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+        
+        const newFile = {
+            file_id: newFileId,
+            role,
+            filename: req.file.originalname,
+            safe_filename: req.file.filename,
+            size_bytes: req.file.size,
+            mime_type: req.file.mimetype,
+            status: 'VALIDATED',
+            source_type: 'UPLOAD',
+            checksum: { algorithm: 'SHA256', value: validationResult.forensics.checksum },
+            storage: { provider: 'LOCAL', key: req.file.filename },
+            associations: { order_intent_id: orderIntentId, user_id: intent.user_id },
+            validation: validationResult,
+            replacement: {
+                replaces_file_id: oldFileId,
+                replacement_reason
+            }
+        };
+
+        await repositories.productionFiles.create(newFile);
+
+        // 3. Update Order Intent
+        const historyEntry = {
+            role,
+            old_file_id: oldFileId,
+            new_file_id: newFileId,
+            reason: replacement_reason,
+            created_at: new Date().toISOString(),
+            actor_type: isAdmin ? 'ADMIN' : 'CUSTOMER'
+        };
+
+        const updatedHistory = [...(intent.production_files_history || []), historyEntry];
+        const updatedFiles = { ...intent.production_files };
+        if (role === 'INTERIOR_PDF') {
+            updatedFiles.interior_pdf_file_id = newFileId;
+            updatedFiles.files = updatedFiles.files.map(f => f.role === 'INTERIOR_PDF' ? { ...f, file_id: newFileId, filename: req.file.originalname } : f);
+        } else {
+            updatedFiles.cover_pdf_file_id = newFileId;
+            updatedFiles.files = updatedFiles.files.map(f => f.role === 'COVER_PDF' ? { ...f, file_id: newFileId, filename: req.file.originalname } : f);
+        }
+
+        await repositories.orderIntents.update(orderIntentId, {
+            production_files: updatedFiles,
+            production_files_history: updatedHistory,
+            lifecycle: {
+                ...intent.lifecycle,
+                preflight_status: 'PENDING_REVALIDATION'
+            },
+            exception: {
+                ...intent.exception,
+                status: 'OPERATOR_REVIEW_REQUIRED',
+                reason_message: "Files reuploaded. Revalidation required.",
+                updated_at: new Date().toISOString()
+            }
+        });
+
+        console.log(`[FILE_REPLACED] intent=${orderIntentId} role=${role} new=${newFileId} old=${oldFileId}`);
+
+        await repositories.auditEvents.append({
+            entity_type: 'ORDER_INTENT',
+            entity_id: orderIntentId,
+            event_type: 'PRODUCTION_FILE_REPLACED',
+            actor_id: identity.user_id,
+            payload: { role, old_file_id: oldFileId, new_file_id: newFileId }
+        });
+
+        res.json({ ok: true, file_id: newFileId, status: 'REPLACED' });
+
+    } catch (err) {
+        console.error(`[FILE_REPLACEMENT_FAILED] ${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * POST /api/order-intents/:id/exception/review
+ * Administrative exception review endpoint.
+ */
+app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getById(req.params.id);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        const { action, customer_message, operator_notes } = req.body;
+        const identity = resolveRequestIdentity(req);
+
+        if (action === 'REQUEST_REUPLOAD') {
+            await openOrderIntentException(intent, {
+                status: "CUSTOMER_REUPLOAD_REQUIRED",
+                reason_code: "OPERATOR_REQUESTED_REUPLOAD",
+                reason_message: "Operator requested manual reupload.",
+                customer_message: customer_message || "Please reupload your production files.",
+                operator_notes,
+                source: "OPERATOR",
+                actor_id: identity.user_id
+            });
+        } else if (action === 'MARK_RESOLVED') {
+            // Safety: cannot resolve if preflight is still failed
+            if (intent.lifecycle.preflight_status === 'FAILED') {
+                return res.status(400).json({ ok: false, error: "CANNOT_RESOLVE_WHILE_PREFLIGHT_FAILED" });
+            }
+            await resolveOrderIntentException(intent, {
+                type: "MANUAL_OVERRIDE",
+                notes: operator_notes,
+                resolved_by: identity.user_id
+            });
+        } else if (action === 'SEND_TO_REFUND_REVIEW') {
+            await openOrderIntentException(intent, {
+                status: "REFUND_REVIEW_REQUIRED",
+                reason_code: "REFUND_REQUESTED",
+                reason_message: "Order queued for refund review.",
+                customer_message: "Our team is reviewing payment resolution.",
+                operator_notes,
+                source: "OPERATOR",
+                actor_id: identity.user_id
+            });
+        } else if (action === 'CANCEL_ORDER') {
+            if (intent.status === 'SHIPPED') {
+                return res.status(400).json({ ok: false, error: "CANNOT_CANCEL_SHIPPED_ORDER" });
+            }
+            await repositories.orderIntents.update(intent.order_intent_id, { 
+                status: 'CANCELLED',
+                cancelled_at: new Date().toISOString(),
+                cancellation_reason: operator_notes
+            });
+            await resolveOrderIntentException(intent, {
+                type: "CANCELLED",
+                notes: operator_notes,
+                resolved_by: identity.user_id
+            });
+        } else if (action === 'REQUEST_ALTERNATE_PRINTER') {
+             await openOrderIntentException(intent, {
+                status: "ALTERNATE_PRINTER_REQUIRED",
+                reason_code: "PRINTHOUSE_REJECTION_RECOVERY",
+                reason_message: "Operator initiated alternate printer search.",
+                customer_message: "Our production team is reviewing your order.",
+                operator_notes,
+                source: "OPERATOR",
+                actor_id: identity.user_id
+            });
+        } else {
+            return res.status(400).json({ ok: false, error: "INVALID_ACTION" });
+        }
+
+        res.json({ ok: true, action });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * POST /api/order-intents/:id/exception/alternate-printer/prepare
+ * Placeholder for alternate printer search.
+ */
+app.post('/api/order-intents/:id/exception/alternate-printer/prepare', adminOnly, async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getById(req.params.id);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // TODO: Re-calculate offers or use original specs to find candidates
+        console.log(`[ALTERNATE_PRINTER_PREPARE_REQUEST] intent=${intent.order_intent_id}`);
+
+        res.json({
+            ok: true,
+            original_printer_id: intent.offer.selected_offer_snapshot.printer_id,
+            candidates: [
+                // In a real flow, we'd query the Pricing Engine or BPE list
+                { printer_id: "ALT_001", printer_name: "Mock Alternate Partner A", lead_time: 5, price: intent.totals.total_price },
+                { printer_id: "ALT_002", printer_name: "Mock Alternate Partner B", lead_time: 7, price: intent.totals.total_price * 1.05 }
+            ],
+            note: "TODO: Implement Pricing Engine alternate lookup and delta handling."
+        });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+// ---- Customer Order Tracking (v5.3 - Phase 13) ----
+
+/**
+ * GET /api/orders/:id/tracking
+ * Provides a customer-safe view of order progress.
+ */
+app.get('/api/orders/:id/tracking', async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getById(req.params.id);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // Security: Ownership check
+        if (!assertOrderIntentAccess(req, intent)) {
+            console.log(`[TRACKING_VIEW_ACCESS_DENIED] id=${req.params.id} session=${req.sessionID}`);
+            return res.status(403).json({ ok: false, error: "FORBIDDEN_TRACKING_ACCESS" });
+        }
+
+        // Fetch dispatch package if exists for production status
+        let dispatchPkg = null;
+        if (intent.status === 'CONTROL_PLANE_ORDER_CREATED' || intent.status === 'SHIPPED') {
+            const list = await repositories.dispatchPackages.listByOrderIntent(intent.order_intent_id);
+            dispatchPkg = list[0]; // Get the latest one
+        }
+
+        const tracking = await buildCustomerTrackingView(intent, dispatchPkg);
+        console.log(`[TRACKING_VIEW_CREATED] id=${intent.order_intent_id} ref=${intent.public_ref} status=${tracking.customer_status}`);
+        
+        res.json({ ok: true, tracking });
+    } catch (err) {
+        console.error(`[TRACKING_VIEW_FAILED] id=${req.params.id} error=${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * GET /api/orders/ref/:publicRef/tracking
+ * Provides a customer-safe view of order progress by public reference.
+ */
+app.get('/api/orders/ref/:publicRef/tracking', async (req, res) => {
+    try {
+        const intent = await repositories.orderIntents.getByPublicRef(req.params.publicRef);
+        if (!intent) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+        // Security: Require session or auth context (no unauthenticated guessing)
+        if (!assertOrderIntentAccess(req, intent)) {
+             console.log(`[TRACKING_VIEW_ACCESS_DENIED] ref=${req.params.publicRef} session=${req.sessionID}`);
+             return res.status(403).json({ ok: false, error: "FORBIDDEN_TRACKING_ACCESS" });
+        }
+
+        let dispatchPkg = null;
+        if (intent.status === 'CONTROL_PLANE_ORDER_CREATED' || intent.status === 'SHIPPED') {
+            const list = await repositories.dispatchPackages.listByOrderIntent(intent.order_intent_id);
+            dispatchPkg = list[0];
+        }
+
+        const tracking = await buildCustomerTrackingView(intent, dispatchPkg);
+        res.json({ ok: true, tracking });
+    } catch (err) {
+        console.error(`[TRACKING_VIEW_FAILED] ref=${req.params.publicRef} error=${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
+    }
+});
+
+/**
+ * GET /api/admin/health/notifications
+ * Provides forensic telemetry for the notification subsystem.
+ */
+app.get('/api/admin/health/notifications', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${ADMIN_TOKEN}`) {
+        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+
+    try {
+        const stats = await repositories.notifications.health();
+        res.json({
+            ok: true,
+            enabled: NOTIFICATIONS_ENABLED,
+            provider: NOTIFICATION_PROVIDER,
+            smtp_configured: !!SMTP_CONFIG.host,
+            stats
+        });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+/**
+ * POST /api/admin/cleanup/orphan-production-files
+ */
+app.post('/api/admin/cleanup/orphan-production-files', adminOnly, async (req, res) => {
+    const removed = await cleanupOrphanProductionFiles();
+    res.json({ ok: true, removed });
+});
+
+/**
+ * POST /api/admin/cleanup/abandoned-order-intents
+ */
+app.post('/api/admin/cleanup/abandoned-order-intents', adminOnly, async (req, res) => {
+    const cancelled = await cleanupAbandonedOrderIntents();
+    res.json({ ok: true, cancelled });
 });
 
 app.listen(PORT, () => {

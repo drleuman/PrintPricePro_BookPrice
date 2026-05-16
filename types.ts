@@ -135,10 +135,20 @@ export interface BookPriceOffer {
 
   // Preserve original BPE offer for Control Plane metadata
   raw_offer?: any;
+
+  // v5.3 Phase 4: Signed Offer Sessions
+  offer_session_id?: string;
+  printer_name?: string;
+  signature?: string;
+  expires_at?: string;
+  raw_offer_snapshot?: any;
 }
 
 export interface BookPriceResponse {
   success: boolean;
+  ok?: boolean; // v5.3 server-side calculate endpoint uses 'ok'
+  offer_session_id?: string;
+  expires_at?: string;
   offers: BookPriceOffer[];
   recommended_offer_id?: string | null;
   raw_recommended_offer_id?: string | null;
@@ -152,27 +162,38 @@ export type ProductionFileKind = 'INTERIOR_PDF' | 'COVER_SPINE_BACK_PDF';
 
 export type ProductionFileSourceType = 'UPLOAD' | 'DOWNLOAD_URL';
 
-export type ProductionFileStatus =
+export type ProductionFileStatus = 
   | 'PENDING'
-  | 'SELECTED'
+  | 'SELECTED' 
   | 'LINK_PROVIDED'
   | 'LINK_PENDING_FETCH'
   | 'FETCHING'
-  | 'UPLOADING'
-  | 'UPLOADED'
+  | 'UPLOADING' 
+  | 'UPLOADED' 
+  | 'UPLOADED_WITH_WARNINGS'
   | 'VALIDATING'
-  | 'VALIDATED'
+  | 'VALIDATED' 
   | 'REJECTED'
-  | 'ERROR';
+  | 'ERROR'
+  | 'MISSING';
 
 export interface ProductionFileMetadata {
   kind: ProductionFileKind;
+  role?: string; // v5.3 server-side role (e.g. INTERIOR_PDF)
   source_type: ProductionFileSourceType;
   filename?: string;
   size_bytes?: number;
   mime_type?: string;
   status: ProductionFileStatus;
-  checksum?: string;
+  checksum?: {
+    algorithm: string;
+    value: string;
+  };
+  validation?: {
+    pdf_signature_valid: boolean;
+    eof_marker_found: boolean;
+    warnings: string[];
+  };
   storage_url?: string;
   file_id?: string;
   repository_id?: string;
@@ -182,6 +203,7 @@ export interface ProductionFileMetadata {
   ingestion_status?: 'NOT_STARTED' | 'QUEUED' | 'FETCHED' | 'FAILED';
   fetched_at?: string;
   validated_at?: string;
+  created_at?: string;
   error?: string;
 }
 
@@ -197,7 +219,18 @@ export interface ProductionFileDraft {
   download_url_host?: string;
   ingestion_status?: 'NOT_STARTED' | 'QUEUED' | 'FETCHED' | 'FAILED';
   fetched_at?: string;
-  checksum?: string;
+  checksum?: {
+    algorithm: string;
+    value: string;
+  };
+  validation?: {
+    pdf_signature_valid: boolean;
+    eof_marker_found: boolean;
+    warnings: string[];
+  };
+  file_id?: string;
+  storage_url?: string;
+  created_at?: string;
   error?: string;
 }
 
@@ -213,6 +246,7 @@ export type ProductionFilesWorkflowStatus =
   | 'FILES_MIXED_DECLARED'
   | 'FILES_UPLOADING'
   | 'FILES_UPLOADED'
+  | 'FILES_UPLOADED_WITH_WARNINGS'
   | 'FILES_VALIDATING'
   | 'FILES_VALIDATED'
   | 'FILES_REJECTED'
@@ -265,6 +299,8 @@ export interface InvoicePaymentState {
 
 export interface CartItem {
   id: string;
+  offer_session_id?: string;
+  offer_id?: string;
   specs: BookPricePayload;
   offer: BookPriceOffer;
   pricing: {
@@ -351,13 +387,159 @@ export interface ControlPlaneOrderPayload {
     bpe_endpoint: '/api/marketplace/offers';
     payment_status: PaymentStatus;
     customer_selected_offer: BookPriceOffer;
-    bpe_recommended_offer?: BookPriceOffer | null;
-    offers_snapshot: BookPriceOffer[];
-    chat_context?: Record<string, unknown>;
-    ui_context?: Record<string, unknown>;
-    production_files?: ProductionFilesOrderMetadata;
-    invoice_payment?: InvoicePaymentState;
+    pricing?: any;
+    production_files?: any;
+    invoice_payment?: any;
   };
-
   status: ControlPlaneOrderStatus;
+}
+
+// ---- Order Intent System (v5.3 Phase 5) ----
+
+export type OrderIntentStatus =
+  | 'DRAFT'
+  | 'FILES_UPLOADED'
+  | 'PREFLIGHT_PENDING'
+  | 'PREFLIGHT_VALIDATED'
+  | 'PREFLIGHT_FAILED'
+  | 'INVOICE_PENDING'
+  | 'INVOICE_CREATED'
+  | 'PAYMENT_PENDING'
+  | 'PAID'
+  | 'CONTROL_PLANE_ORDER_CREATED'
+  | 'SENT_TO_PRINTHOUSE'
+  | 'CANCELLED';
+
+export interface OrderIntentLifecycle {
+  quote_status: 'DRAFT' | 'SIGNED' | 'EXPIRED';
+  files_status: 'PENDING' | 'UPLOADED' | 'VALIDATED' | 'FAILED';
+  preflight_status: 'NOT_STARTED' | 'PENDING' | 'RUNNING' | 'PARTIAL' | 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_CONFIGURED';
+  invoice_status: 'NOT_CREATED' | 'CREATED' | 'SENT' | 'CANCELLED' | 'ERROR';
+  payment_status: 'NOT_STARTED' | 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NOT_CONFIGURED';
+  control_plane_order_status: 'NOT_CREATED' | 'READY' | 'CREATING' | 'CREATED' | 'FAILED' | 'NOT_CONFIGURED';
+  final_order_status: 'NOT_CREATED' | 'SUBMITTED' | 'ACCEPTED' | 'FAILED';
+  printhouse_handoff_status: 'NOT_STARTED' | 'READY' | 'QUEUED' | 'SENT' | 'FAILED' | 'DISABLED';
+}
+
+// v5.3 Phase 7: Billing & Payment Gate
+export interface OrderIntentInvoice {
+  invoice_id: string;
+  invoice_number: string;
+  status: 'NOT_CREATED' | 'CREATED' | 'SENT' | 'CANCELLED' | 'ERROR';
+  amount: number;
+  currency: string;
+  url?: string;
+  created_at: string;
+  updated_at: string;
+  error?: string;
+}
+
+export interface OrderIntentPayment {
+  provider: 'stripe' | 'bank_transfer' | null;
+  status: 'NOT_STARTED' | 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED' | 'NOT_CONFIGURED';
+  checkout_url?: string;
+  payment_intent_id?: string;
+  bank_transfer_reference?: string;
+  instructions?: {
+    account_name?: string;
+    iban?: string;
+    swift?: string;
+    amount: number;
+    currency: string;
+    reference: string;
+  };
+  created_at: string;
+  updated_at: string;
+  error?: string;
+}
+
+// v5.3 Phase 8: Finalization & Handoff
+export interface OrderIntentControlPlane {
+  status: 'NOT_CREATED' | 'READY' | 'CREATING' | 'CREATED' | 'FAILED' | 'NOT_CONFIGURED';
+  order_ref: string | null;
+  order_id: string | null;
+  endpoint: string | null;
+  response?: any;
+  error?: any;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface OrderIntentPrinthouseHandoff {
+  status: 'NOT_READY' | 'READY' | 'QUEUED' | 'SENT' | 'FAILED' | 'DISABLED';
+  printhouse_id: string;
+  printhouse_name: string;
+  package_id?: string;
+  files?: Array<{ role: string; file_id: string; checksum: string }>;
+  created_at: string;
+  updated_at: string;
+  error?: string;
+}
+
+export interface PreflightJob {
+  role: 'INTERIOR_PDF' | 'COVER_PDF';
+  file_id: string;
+  job_id?: string;
+  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_STARTED';
+  risk_level?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  risk_score?: number;
+  issue_count?: number;
+  critical_count?: number;
+  findings?: any[];
+  artifacts?: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+  error?: string;
+}
+
+export interface OrderIntentPreflight {
+  status: 'NOT_STARTED' | 'PENDING' | 'RUNNING' | 'PARTIAL' | 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_CONFIGURED';
+  jobs: PreflightJob[];
+  started_at?: string;
+  completed_at?: string;
+  last_checked_at?: string;
+}
+
+export interface OrderIntent {
+  order_intent_id: string;
+  public_ref: string;
+  session_id: string;
+  cart_id?: string | null;
+  user_id?: string | null;
+  status: OrderIntentStatus;
+  lifecycle: OrderIntentLifecycle;
+  offer: {
+    offer_session_id: string;
+    offer_id: string;
+    selected_offer_snapshot: BookPriceOffer;
+    signature_validated_at: string;
+  };
+  production_files: {
+    interior_pdf_file_id: string;
+    cover_pdf_file_id: string;
+    files: Array<{ role: string; file_id: string; filename: string }>;
+  };
+  preflight?: OrderIntentPreflight;
+  customer: {
+    email?: string;
+    name?: string;
+    company?: string;
+    country?: string;
+    role?: string;
+  };
+  totals: {
+    currency: string;
+    total_price: number;
+    tax_amount: number;
+    shipping_amount: number;
+    grand_total: number;
+  };
+  control_plane?: OrderIntentControlPlane;
+  printhouse_handoff?: OrderIntentPrinthouseHandoff;
+  dispatch_package_id?: string;
+  invoice?: OrderIntentInvoice;
+  payment?: OrderIntentPayment;
+  created_at: string;
+  updated_at: string;
+  is_intent?: boolean; // UI helper
 }

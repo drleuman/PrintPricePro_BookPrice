@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { CheckCircleIcon, XCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, XCircleIcon, XMarkIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 
-export type ToastVariant = 'success' | 'error';
+export type ToastVariant = 'success' | 'error' | 'info';
 
 export interface ToastMessage {
   id: number;
@@ -26,25 +26,30 @@ const ToastItem: React.FC<{ toast: ToastMessage; onDismiss: () => void }> = ({ t
   }, [onDismiss]);
 
   const isSuccess = toast.variant === 'success';
+  const isInfo = toast.variant === 'info';
 
   return (
     <div
       className={`flex items-start gap-4 px-5 py-4 border shadow-2xl w-full max-w-sm pointer-events-auto
         ${isSuccess
           ? 'bg-corporate-secondary border-corporate-accent/40'
-          : 'bg-corporate-secondary border-red-500/50'
+          : isInfo 
+            ? 'bg-corporate-secondary border-blue-500/40'
+            : 'bg-corporate-secondary border-red-500/50'
         }`}
       role="alert"
       aria-live="assertive"
     >
       {isSuccess
         ? <CheckCircleIcon className="w-5 h-5 text-corporate-accent shrink-0 mt-0.5" />
-        : <XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+        : isInfo
+          ? <InformationCircleIcon className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+          : <XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
       }
 
       <div className="flex-1 min-w-0">
         <p className={`text-[0.65rem] font-technical font-black tracking-monolith uppercase
-          ${isSuccess ? 'text-corporate-accent' : 'text-red-400'}`}>
+          ${isSuccess ? 'text-corporate-accent' : isInfo ? 'text-blue-400' : 'text-red-400'}`}>
           {toast.title}
         </p>
         {toast.body && (

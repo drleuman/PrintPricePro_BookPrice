@@ -6,7 +6,10 @@ import {
   ClipboardDocumentListIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
+import OrderIntentDetails from './OrderIntentDetails';
+import { CustomerOrderTracking } from './CustomerOrderTracking';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,14 +23,17 @@ interface OrderSpecs {
 }
 
 interface Order {
-  id: number;
+  id: string | number;
   order_ref: string;
   user_id: string | number;
-  specs: OrderSpecs;
+  specs?: OrderSpecs;
   offer_print_house: string;
   offer_price: number;
+  currency?: string;
   status: string;
+  lifecycle?: any;
   created_at: string;
+  is_intent?: boolean;
 }
 
 interface UserOrdersProps {
@@ -47,10 +53,17 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled:  'bg-red-500/10 text-red-400 border-red-500/30',
 };
 
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const colors = STATUS_COLORS[status] ?? 'bg-white/5 text-corporate-muted border-white/10';
+const StatusBadge: React.FC<{ status: string; variant?: 'default' | 'success' | 'warning' | 'error' | 'info' }> = ({ status, variant = 'default' }) => {
+  const baseColors = STATUS_COLORS[status] ?? 'bg-white/5 text-corporate-muted border-white/10';
+  let colors = baseColors;
+  
+  if (variant === 'success') colors = 'bg-green-500/10 text-green-400 border-green-500/30';
+  if (variant === 'warning') colors = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30';
+  if (variant === 'error') colors = 'bg-red-500/10 text-red-400 border-red-500/30';
+  if (variant === 'info') colors = 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-[0.6rem] font-black uppercase tracking-widest border ${colors}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[0.55rem] font-black uppercase tracking-widest border ${colors}`}>
       {status}
     </span>
   );
@@ -69,6 +82,8 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -76,9 +91,19 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
       setError(null);
       try {
         const res = await fetch(`/api/orders?user_id=${encodeURIComponent(userId)}`);
+        
+        if (res.status === 403) {
+            setError("ACCESS_DENIED: You are not authorized to view these orders.");
+            return;
+        }
+        if (res.status === 429) {
+            setError("TOO_MANY_REQUESTS: Please wait a moment before trying again.");
+            return;
+        }
+
         const data = await res.json();
         if (!res.ok) {
-          setError(data?.error || 'Failed to load orders.');
+          setError(data?.error || data?.message || 'Failed to load orders.');
           return;
         }
         setOrders(data.orders ?? []);
@@ -111,6 +136,10 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
     if (currentPage < totalPages - 2) pages.push('ellipsis');
     pages.push(totalPages);
     return pages;
+  };
+
+  const handleRowClick = (order: Order) => {
+    setSelectedOrderId(String(order.id));
   };
 
   return (
@@ -171,9 +200,9 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
               {/* Column headers */}
               <div
                 className="grid items-center gap-x-4 px-5 py-1.5 border-b border-white/10 bg-corporate-primary/30"
-                style={{ gridTemplateColumns: '2fr 0.8fr 1fr 2fr 1fr 1fr 1fr' }}
+                style={{ gridTemplateColumns: '1.5fr 0.6fr 0.8fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr' }}
               >
-                {['Order ref', 'Copies', 'Int. pages', 'Print house', 'Total', 'Date', 'Status'].map((label) => (
+                {['Order ref', 'Copies', 'Int. pages', 'Print house', 'Total', 'Date', 'Status', 'Preflight', 'Invoice', 'Payment', 'CP Order', 'Track'].map((label) => (
                   <span key={label} className="text-[0.55rem] font-black uppercase tracking-[0.15em] text-corporate-muted">
                     {label}
                   </span>
@@ -184,35 +213,95 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
               {pagedOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="grid items-center gap-x-4 px-5 py-2 border-b border-white/5 last:border-b-0 hover:bg-corporate-elevated/40 transition-colors cursor-default"
-                  style={{ gridTemplateColumns: '2fr 0.8fr 1fr 2fr 1fr 1fr 1fr' }}
+                  onClick={() => handleRowClick(order)}
+                  className="grid items-center gap-x-4 px-5 py-2 border-b border-white/5 last:border-b-0 hover:bg-corporate-elevated/40 transition-colors cursor-pointer group"
+                  style={{ gridTemplateColumns: '1.5fr 0.6fr 0.8fr 1.5fr 1fr 1fr 1fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr' }}
                 >
-                  <span className="font-mono font-bold text-[0.7rem] text-corporate-text tracking-tight truncate">
-                    {order.order_ref}
+                  <div className="flex flex-col truncate">
+                    <span className="font-mono font-bold text-[0.7rem] text-corporate-text tracking-tight truncate flex items-center gap-2">
+                        {order.order_ref}
+                        <MagnifyingGlassIcon className="w-3 h-3 text-corporate-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </span>
+                    {(order as any).control_plane?.order_ref && (
+                        <span className="text-[0.5rem] font-mono text-corporate-accent truncate">CP: {(order as any).control_plane.order_ref}</span>
+                    )}
+                  </div>
+                  <span className="font-technical text-[0.65rem] text-corporate-text-secondary tabular-nums">
+                    {order.specs?.copies || '-'}
                   </span>
                   <span className="font-technical text-[0.65rem] text-corporate-text-secondary tabular-nums">
-                    {order.specs.copies}
-                  </span>
-                  <span className="font-technical text-[0.65rem] text-corporate-text-secondary tabular-nums">
-                    {order.specs.interior_pages}
+                    {order.specs?.interior_pages || '-'}
                   </span>
                   <span className="font-technical text-[0.65rem] text-corporate-muted truncate">
                     {order.offer_print_house}
                   </span>
-                  <span className="font-mono font-bold text-[0.7rem] text-corporate-text tabular-nums">
-                    ${Number(order.offer_price).toFixed(2)}
+                  <span className="font-mono font-bold text-[0.7rem] text-corporate-text tabular-nums text-right">
+                    {order.currency || '$'} {Number(order.offer_price).toFixed(2)}
                   </span>
                   <span className="font-technical text-[0.65rem] text-corporate-muted tabular-nums">
                     {new Date(order.created_at).toLocaleDateString()}
                   </span>
-                  <div className="flex justify-end">
-                    <StatusBadge status={order.status} />
+                  
+                  <div className="flex justify-start">
+                    <StatusBadge 
+                        status={order.status === 'CONTROL_PLANE_ORDER_CREATED' ? 'PROCESSING' : order.status} 
+                        variant={order.status === 'COMPLETED' ? 'success' : 'info'}
+                    />
+                  </div>
+                  <div className="flex justify-start">
+                    <StatusBadge 
+                        status={order.lifecycle?.preflight_status || 'NOT_STARTED'} 
+                        variant={order.lifecycle?.preflight_status === 'PASSED' ? 'success' : order.lifecycle?.preflight_status === 'FAILED' ? 'error' : 'default'}
+                    />
+                  </div>
+                  <div className="flex justify-start">
+                    <StatusBadge 
+                        status={order.lifecycle?.invoice_status || 'NOT_CREATED'} 
+                        variant={order.lifecycle?.invoice_status === 'CREATED' ? 'info' : 'default'}
+                    />
+                  </div>
+                  <div className="flex justify-start">
+                    <StatusBadge 
+                        status={order.lifecycle?.payment_status || 'NOT_STARTED'} 
+                        variant={order.lifecycle?.payment_status === 'PAID' ? 'success' : order.lifecycle?.payment_status === 'PENDING' ? 'warning' : 'default'}
+                    />
+                  </div>
+                  <div className="flex justify-start">
+                    <StatusBadge 
+                        status={order.lifecycle?.control_plane_order_status || 'NOT_CREATED'} 
+                        variant={order.lifecycle?.control_plane_order_status === 'CREATED' ? 'success' : 'default'}
+                    />
+                  </div>
+                  <div className="flex justify-start">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setTrackingOrderId(String(order.id));
+                        }}
+                        className="text-[0.55rem] font-black uppercase tracking-widest text-corporate-accent hover:text-white border border-corporate-accent/30 hover:border-corporate-accent px-2 py-0.5 transition-all"
+                    >
+                        Track
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {selectedOrderId && (
+            <OrderIntentDetails 
+                orderIntentId={selectedOrderId} 
+                onClose={() => setSelectedOrderId(null)} 
+            />
+        )}
+
+        {trackingOrderId && (
+            <CustomerOrderTracking 
+                orderIntentId={trackingOrderId}
+                onClose={() => setTrackingOrderId(null)}
+            />
+        )}
 
         {/* Footer */}
         <div className="shrink-0 px-8 py-4 border-t border-white/5 bg-corporate-primary flex items-center justify-between gap-4">

@@ -65,9 +65,24 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
             </h3>
           </div>
           <div className="flex items-center gap-2">
+            {draft.status === 'UPLOADING' && (
+              <span className="bg-yellow-500/10 text-yellow-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-yellow-500/20 tracking-tighter uppercase animate-pulse">
+                UPLOADING...
+              </span>
+            )}
+            {draft.status === 'UPLOADED' && (
+              <span className="bg-green-500/10 text-green-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-green-500/20 tracking-tighter uppercase">
+                UPLOADED TO SERVER
+              </span>
+            )}
+            {draft.status === 'VALIDATED' && (
+              <span className="bg-corporate-accent/20 text-corporate-accent text-[8px] font-technical font-black px-1.5 py-0.5 border border-corporate-accent/30 tracking-tighter uppercase">
+                VALIDATED
+              </span>
+            )}
             {draft.status === 'SELECTED' && (
               <span className="bg-corporate-accent/10 text-corporate-accent text-[8px] font-technical font-black px-1.5 py-0.5 border border-corporate-accent/20 tracking-tighter uppercase">
-                PDF SELECTED
+                LOCAL PDF READY
               </span>
             )}
             {draft.status === 'LINK_PROVIDED' && (
@@ -78,6 +93,16 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
             {draft.status === 'PENDING' && (
               <span className="bg-corporate-muted/10 text-corporate-muted text-[8px] font-technical font-black px-1.5 py-0.5 border border-corporate-muted/20 tracking-tighter uppercase">
                 FILE PENDING
+              </span>
+            )}
+            {draft.status === 'UPLOADED_WITH_WARNINGS' && (
+              <span className="bg-orange-500/10 text-orange-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-orange-500/20 tracking-tighter uppercase">
+                UPLOADED WITH WARNINGS
+              </span>
+            )}
+            {draft.status === 'REJECTED' && (
+              <span className="bg-red-500/10 text-red-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-red-500/20 tracking-tighter uppercase">
+                REJECTED
               </span>
             )}
             {draft.status === 'ERROR' && (
@@ -108,12 +133,36 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
             <button
               type="button"
               onClick={() => onFileRemove(kind)}
-              className="text-corporate-accent hover:text-corporate-hover text-[10px] font-technical font-black uppercase tracking-monolith p-2"
+              disabled={draft.status === 'UPLOADING'}
+              className="text-corporate-accent hover:text-corporate-hover text-[10px] font-technical font-black uppercase tracking-monolith p-2 disabled:opacity-30"
             >
               [ REMOVE ]
             </button>
           </div>
-        ) : (
+        ) : null}
+
+        {isDeclared && draft.checksum && (
+          <div className="px-3 py-1 bg-white/5 border-l border-corporate-accent/30">
+             <p className="text-[8px] font-technical text-corporate-muted uppercase tracking-tighter">
+               SHA256: <span className="text-corporate-text opacity-70">{draft.checksum.value.substring(0, 12)}...</span>
+             </p>
+          </div>
+        )}
+
+        {draft.status === 'UPLOADED_WITH_WARNINGS' && draft.validation?.warnings && (
+          <div className="p-3 bg-orange-500/5 border border-orange-500/20">
+            <p className="text-[9px] font-technical text-orange-500 uppercase font-black leading-tight">
+              ⚠️ VALIDATION WARNING: The uploaded PDF has validation warnings and cannot proceed until validated.
+            </p>
+            {draft.validation.warnings.map(w => (
+              <p key={w} className="text-[8px] font-technical text-corporate-muted uppercase mt-1">
+                • {w}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {!isDeclared && (
           <div className="flex flex-col gap-4">
             {/* Tabs Selector */}
             <div className="flex border-b border-corporate-text/10">
@@ -187,9 +236,14 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
     );
   };
 
-  const isInteriorReady = ['SELECTED', 'UPLOADED', 'VALIDATED', 'LINK_PROVIDED', 'LINK_PENDING_FETCH'].includes(filesState.interior_pdf.status);
-  const isCoverReady = ['SELECTED', 'UPLOADED', 'VALIDATED', 'LINK_PROVIDED', 'LINK_PENDING_FETCH'].includes(filesState.cover_spine_back_pdf.status);
-  const allReady = isInteriorReady && isCoverReady;
+  const isInteriorReady = ['UPLOADED', 'VALIDATED', 'LINK_PROVIDED', 'LINK_PENDING_FETCH'].includes(filesState.interior_pdf.status);
+  const isCoverReady = ['UPLOADED', 'VALIDATED', 'LINK_PROVIDED', 'LINK_PENDING_FETCH'].includes(filesState.cover_spine_back_pdf.status);
+  
+  // v5.3 Phase 2: Explicitly block warnings from checkout
+  const interiorHasWarnings = filesState.interior_pdf.status === 'UPLOADED_WITH_WARNINGS';
+  const coverHasWarnings = filesState.cover_spine_back_pdf.status === 'UPLOADED_WITH_WARNINGS';
+
+  const allReady = isInteriorReady && isCoverReady && !interiorHasWarnings && !coverHasWarnings;
 
   const selectedOfferPriceRaw = cartItem.pricing?.total_price ?? cartItem.offer.total_price ?? cartItem.offer.total_cost ?? 0;
   const selectedOfferPrice = Number(selectedOfferPriceRaw);

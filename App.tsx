@@ -18,6 +18,7 @@ import {
 } from './constants';
 
 import {
+  BookSize,
   InitialBookPricePayload,
   BookPricePayload,
   BookPriceResponse,
@@ -47,10 +48,14 @@ import ProductionFilesPanel from './components/ProductionFilesPanel';
 import CheckoutStepper from './components/CheckoutStepper';
 import {
   validateProductionFile,
-  validateProductionFileUrl
+  validateProductionFileUrl,
+  uploadProductionFile,
+  listProductionFiles
 } from './lib/productionFilesApi';
 
 import { t } from './i18n/en';
+import OrderIntentDetails from './components/OrderIntentDetails';
+import { PrinthouseQueue } from './components/PrinthouseQueue';
 
 // ==== Helpers para extraer info del PDF ====
 
@@ -159,11 +164,27 @@ const toProductionFileMetadata = (
   download_url_host: draft.download_url_host,
   ingestion_status: draft.ingestion_status,
   checksum: draft.checksum,
+  validation: draft.validation,
+  file_id: draft.file_id,
+  storage_url: draft.storage_url,
+  created_at: draft.created_at,
   error: draft.error,
 });
 
+const SESSION_ID_KEY = 'ppp_marketplace_session_id';
+
+const getOrCreateSessionId = () => {
+  let sid = localStorage.getItem(SESSION_ID_KEY);
+  if (!sid) {
+    sid = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    localStorage.setItem(SESSION_ID_KEY, sid);
+  }
+  return sid;
+};
+
 const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentView, setCurrentView] = useState<'marketplace' | 'printhouse'>('marketplace');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -242,6 +263,7 @@ const App: React.FC = () => {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const [selectedIntentId, setSelectedIntentId] = useState<string | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastIdRef = useRef(0);
@@ -252,6 +274,7 @@ const App: React.FC = () => {
     cover_spine_back_pdf: initialFileDraft('COVER_SPINE_BACK_PDF')
   });
 
+  const sessionId = useRef<string>(getOrCreateSessionId());
 
   const addToast = useCallback((msg: Omit<ToastMessage, 'id'>) => {
     const id = ++toastIdRef.current;
@@ -261,6 +284,36 @@ const App: React.FC = () => {
   const dismissToast = useCallback((id: number) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
+
+  // v5.3 Phase 3: Hydrate files from server registry
+  useEffect(() => {
+    const hydrate = async () => {
+      try {
+        const files = await listProductionFiles({ session_id: sessionId.current });
+        if (files.length > 0) {
+          const interior = files.find(f => f.role === 'INTERIOR_PDF');
+          const cover = files.find(f => f.role === 'COVER_PDF');
+
+          setProductionFiles(prev => ({
+            interior_pdf: interior ? { ...prev.interior_pdf, ...interior, status: interior.status } : prev.interior_pdf,
+            cover_spine_back_pdf: cover ? { ...prev.cover_spine_back_pdf, ...cover, status: cover.status } : prev.cover_spine_back_pdf,
+          }));
+          
+          if (interior || cover) {
+            addToast({
+              variant: 'info',
+              title: 'Session restored',
+              body: 'Your previously uploaded production files have been recovered.',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to hydrate production files:', err);
+      }
+    };
+    hydrate();
+  }, [addToast]);
+
   const offersRef = useRef<HTMLDivElement>(null);
   const productionFilesRef = useRef<HTMLDivElement>(null);
 
@@ -332,7 +385,7 @@ const App: React.FC = () => {
         ...prev,
         total_page_count: numPages,
         interior_pages: Math.max(numPages - 4, 0),
-        book_size: sizeInfo.book_size as any,           // "A4", "A5", "Custom", etc.
+        book_size: sizeInfo.book_size as BookSize,           // "A4", "A5", "Custom", etc.
         orientation: sizeInfo.orientation as any,       // "Portrait" | "Landscape"
         interior_print: (isColor ? '4/4' : '1/1') as any, // color vs B/N
         // La cubierta la dejamos como está (4/0) de momento
@@ -507,7 +560,24 @@ const App: React.FC = () => {
       }
 
       const data = await response.json();
+      
+      // v5.3 Phase 4: Handle ok property and session data
+      if (data.ok && !data.success) {
+          data.success = true;
+      }
+
       const normalised = normaliseApiResponse(data);
+      
+      // Inject offer_session_id and signature into normalized offers if missing
+      if (data.offer_session_id) {
+          normalised.offer_session_id = data.offer_session_id;
+          normalised.expires_at = data.expires_at;
+          normalised.offers = normalised.offers.map(o => ({
+              ...o,
+              offer_session_id: data.offer_session_id,
+              expires_at: data.expires_at
+          }));
+      }
 
       if (!normalised.offers.length && normalised.message) {
         setError(normalised.message);
@@ -558,11 +628,48 @@ const App: React.FC = () => {
         }
       }));
 
-      addToast({
-        variant: 'success',
-        title: 'File ready',
-        body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} PDF ready for intake.`,
-      });
+      // v5.3: Immediate upload after selection
+      setProductionFiles(prev => ({
+        ...prev,
+        [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+          ...prev[kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf'],
+          status: 'UPLOADING'
+        }
+      }));
+
+      try {
+        const uploadedMetadata = await uploadProductionFile(file, kind, { 
+          session_id: sessionId.current 
+        });
+        
+        setProductionFiles(prev => ({
+          ...prev,
+          [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+            ...uploadedMetadata
+          }
+        }));
+
+        addToast({
+          variant: 'success',
+          title: 'Upload complete',
+          body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} PDF uploaded successfully.`,
+        });
+      } catch (uploadErr: any) {
+        console.error('Upload failed:', uploadErr);
+        setProductionFiles(prev => ({
+          ...prev,
+          [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
+            ...prev[kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf'],
+            status: 'ERROR',
+            error: uploadErr.message || 'UPLOAD_FAILED'
+          }
+        }));
+        addToast({
+          variant: 'error',
+          title: 'Upload failed',
+          body: uploadErr.message || 'Failed to upload file to server.',
+        });
+      }
     } catch (err) {
       console.error('File validation error:', err);
     }
@@ -684,22 +791,14 @@ const App: React.FC = () => {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          offer_session_id: offer.offer_session_id || offers?.offer_session_id,
+          offer_id: offer.offer_id || offer.id,
+          // Legacy fields preserved for dev-mode logging but backend should ignore in prod
           specs,
           offer: {
             ...offer,
             selected_by_customer: true,
-          },
-          pricing,
-          allOffers,
-          recommendedOffer,
-          recommendedOfferId,
-          selectedBy: 'CUSTOMER',
-          metadata: {
-            contract: 'BPE_MARKETPLACE_NATIVE',
-            source: 'PRINTPRICE_APP',
-            bpe_endpoint: '/api/marketplace/offers',
-            payment_status: 'PENDING',
-          },
+          }
         }),
       });
 
@@ -716,6 +815,8 @@ const App: React.FC = () => {
 
       setCart([{
         id: data.item_id,
+        offer_session_id: offer.offer_session_id || offers?.offer_session_id,
+        offer_id: offer.offer_id || offer.id,
         specs,
         offer: {
           ...offer,
@@ -743,19 +844,31 @@ const App: React.FC = () => {
       setIsCartOpen(true);
     } catch (err: any) {
       console.error('Error adding to cart:', err);
+      const isExpired = err?.message?.includes('OFFER_SESSION_EXPIRED');
+      const msg = isExpired 
+        ? 'This offer has expired. Please recalculate pricing before continuing.'
+        : (err?.message || 'Failed to add offer to cart.');
+      
       addToast({
         variant: 'error',
-        title: 'Cart Error',
-        body: err?.message || 'Failed to add offer to cart.',
+        title: isExpired ? 'Offer Expired' : 'Cart Error',
+        body: msg,
       });
+      if (isExpired) {
+          setOffers(null);
+          setTimeout(() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 100);
+      }
     } finally {
       setCreatingOrder(false);
     }
   }, [offers, cart, addToast, creatingOrder, buildBookPricePayload]);
 
   const areProductionFilesReady = useCallback(() => {
+    // v5.3: SELECTED is no longer enough. Must be UPLOADED or VALIDATED (or LINK_...)
     const readyStatuses: ProductionFileStatus[] = [
-      'SELECTED', 'UPLOADED', 'VALIDATED',
+      'UPLOADED', 'VALIDATED',
       'LINK_PROVIDED', 'LINK_PENDING_FETCH'
     ];
 
@@ -782,6 +895,8 @@ const App: React.FC = () => {
 
       if (interior.status === 'VALIDATED' && cover.status === 'VALIDATED') {
         workflowStatus = 'FILES_VALIDATED';
+      } else if (interior.status === 'UPLOADED_WITH_WARNINGS' || cover.status === 'UPLOADED_WITH_WARNINGS') {
+        workflowStatus = 'FILES_UPLOADED_WITH_WARNINGS';
       } else if (hasDownloadUrl && hasUpload) {
         workflowStatus = 'FILES_MIXED_DECLARED';
       } else if (hasDownloadUrl) {
@@ -819,19 +934,26 @@ const App: React.FC = () => {
       }
       setCreatingOrder(true);
       setOrderError(null);
-      const res = await fetch('/api/cart/checkout', {
+      const cartItem = cart[0]; // Assuming single item cart for this app context
+      const res = await fetch('/api/order-intents', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user,
-          metadata: {
-            production_files: buildProductionFilesMetadata(),
-            invoice_payment: {
-              invoice_status: 'PENDING_FILES',
-              payment_status: 'PENDING',
-            },
+          session_id: sessionId.current,
+          cart_id: cartItem?.id,
+          offer_session_id: cartItem?.offer_session_id,
+          offer_id: cartItem?.offer_id,
+          production_files: {
+            interior_pdf_file_id: productionFiles.interior_pdf.file_id,
+            cover_pdf_file_id: productionFiles.cover_spine_back_pdf.file_id
           },
+          customer: {
+            email: user?.email,
+            name: user?.name,
+            role: user?.role
+          },
+          user_id: user?.user_id
         }),
       });
       if (!res.ok) {
@@ -845,9 +967,11 @@ const App: React.FC = () => {
         throw new Error(message);
       }
       const data = await res.json();
-      const ref = data.order_ref || data.order_id || '—';
-      setOrderSuccess(ref);
-      setCart([]);
+      if (data.ok) {
+        setOrderSuccess(data.public_ref);
+        setSelectedIntentId(data.order_intent_id);
+        setCart([]);
+      }
       setIsCartOpen(false);
       setProductionFiles({
         interior_pdf: initialFileDraft('INTERIOR_PDF'),
@@ -856,17 +980,30 @@ const App: React.FC = () => {
 
       addToast({
         variant: 'success',
-        title: `Order confirmed — ${ref}`,
-        body: 'Order request created. Production assets must be uploaded/fetched, ingested and validated before invoice/payment.',
+        title: `Intent created — ${data.public_ref || data.order_intent_id || '—'}`,
+        body: 'Order Intent created successfully. Final order creation is deferred until preflight validation and payment.',
       });
     } catch (err: any) {
-      const msg = err?.message || 'Checkout error.';
+      console.error('Error creating order:', err);
+      const isExpired = err?.message?.includes('OFFER_SESSION_EXPIRED');
+      const msg = isExpired 
+        ? 'This offer has expired. Please recalculate pricing before continuing.'
+        : (err?.message || 'Checkout error.');
+      
       setOrderError(msg);
       addToast({
         variant: 'error',
-        title: 'Order failed',
+        title: isExpired ? 'Offer Expired' : 'Order Error',
         body: msg,
       });
+
+      if (isExpired) {
+          setCart([]);
+          setOffers(null);
+          setTimeout(() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 100);
+      }
     } finally {
       setCreatingOrder(false);
     }
@@ -919,123 +1056,142 @@ const App: React.FC = () => {
         user={user}
         onOpenAuthModal={() => setAuthModalOpen(true)}
         onLogout={() => setUser(null)}
+        currentView={currentView}
+        onViewChange={setCurrentView}
       />
 
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
-        {/* Visual Workflow Guidance */}
-        <CheckoutStepper currentStep={currentStep} />
+        {currentView === 'marketplace' ? (
+          <>
+            {/* Visual Workflow Guidance */}
+            <CheckoutStepper currentStep={currentStep} />
 
-        {/* Asistente IA arriba, a ancho completo */}
-        <AssistantChat
-          specs={bookPricePayload}
-          offers={offers}
-          onSpecsPatch={(patch) => {
-            console.log("BEFORE PATCH specs:", bookPricePayload);
-            console.log("PATCH RECEIVED:", patch);
-            setBookPricePayload((prev) => {
-              const next = { ...prev, ...patch };
-              console.log("AFTER PATCH next:", next);
-              return next;
-            });
-            setPayloadVersion(v => v + 1);
-          }}
-          onOffersUpdate={(newOffers) => setOffers(newOffers)}
-          onChooseOffer={handleChooseOffer}
-          selectedOfferId={selectedOfferId}
-        />
-
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
-          {/* Left: PDF + form */}
-          <div className="space-y-6">
-            <div className="bg-corporate-secondary p-6 md:p-8 border-l border-white/5 transition-all hover:bg-corporate-primary/50">
-              <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-6 uppercase">
-                {t('upload_pdf_instructions')}
-              </h2>
-              <PdfUploadDropzone
-                onFileSelect={handleFileSelect}
-                loading={loadingPdf}
-                fileName={pdfFile ? pdfFile.name : null}
-                error={error}
-              />
-              {pageCount > 0 && (
-                <p className="mt-4 text-[0.6rem] font-technical tracking-wider text-corporate-text-secondary uppercase">
-                  Detected{' '}
-                  <span className="text-corporate-accent font-black">{pageCount}</span>{' '}
-                  pages in the source_node.
-                </p>
-              )}
-            </div>
-
-            <BookPriceForm
-              initialPayload={bookPricePayload}
-              payloadVersion={payloadVersion}
-              onPayloadChange={handlePayloadChange}
-              onCalculatePrice={handleCalculatePrice}
-              loading={loadingOffers}
-              hasPdf={!!pdfFile}
-              isAdmin={isAdmin}
+            {/* Asistente IA arriba, a ancho completo */}
+            <AssistantChat
+              specs={bookPricePayload}
+              offers={offers}
+              onSpecsPatch={(patch) => {
+                console.log("BEFORE PATCH specs:", bookPricePayload);
+                console.log("PATCH RECEIVED:", patch);
+                setBookPricePayload((prev) => {
+                  const nextPayload = { ...prev, ...patch, book_size: patch.book_size as BookSize };
+                  console.log("AFTER PATCH next:", nextPayload);
+                  return nextPayload;
+                });
+                setPayloadVersion(v => v + 1);
+              }}
+              onOffersUpdate={(newOffers) => setOffers(newOffers)}
+              onChooseOffer={handleChooseOffer}
+              selectedOfferId={selectedOfferId}
             />
-          </div>
 
-          {/* Right: Offers */}
-          <div className="flex flex-col gap-6">
-            <div ref={offersRef}>
-              <PrintOffersPanel
-                offers={offers}
-                loading={loadingOffers}
-                error={combinedOffersError}
-                onChooseOffer={handleChooseOffer}
-                selectedOfferId={selectedOfferId}
-              />
-            </div>
-
-            {orderSuccess && (
-              <div className="bg-corporate-secondary border border-corporate-accent/30 p-8 flex items-start gap-6">
-                <div className="w-2 h-2 mt-1 bg-corporate-accent shrink-0" />
-                <div>
-                  <p className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent uppercase mb-2">
-                    Order confirmed — {orderSuccess}
-                  </p>
-                  <p className="text-sm text-corporate-text-secondary">
-                    Order request created. Production assets are recorded. Payment remains pending until ingestion, validation and invoice generation.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setOrderSuccess(null)}
-                    className="mt-4 text-[10px] font-technical font-black tracking-monolith text-corporate-muted hover:text-corporate-accent uppercase transition-colors"
-                  >
-                    [×] Dismiss
-                  </button>
+            <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
+              {/* Left: PDF + form */}
+              <div className="space-y-6">
+                <div className="bg-corporate-secondary p-6 md:p-8 border-l border-white/5 transition-all hover:bg-corporate-primary/50">
+                  <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-6 uppercase">
+                    {t('upload_pdf_instructions')}
+                  </h2>
+                  <PdfUploadDropzone
+                    onFileSelect={handleFileSelect}
+                    loading={loadingPdf}
+                    fileName={pdfFile ? pdfFile.name : null}
+                    error={error}
+                  />
+                  {pageCount > 0 && (
+                    <p className="mt-4 text-[0.6rem] font-technical tracking-wider text-corporate-text-secondary uppercase">
+                      Detected{' '}
+                      <span className="text-corporate-accent font-black">{pageCount}</span>{' '}
+                      pages in the source_node.
+                    </p>
+                  )}
                 </div>
+
+                <BookPriceForm
+                  initialPayload={bookPricePayload}
+                  payloadVersion={payloadVersion}
+                  onPayloadChange={handlePayloadChange}
+                  onCalculatePrice={handleCalculatePrice}
+                  loading={loadingOffers}
+                  hasPdf={!!pdfFile}
+                  isAdmin={isAdmin}
+                />
+              </div>
+
+              {/* Right: Offers */}
+              <div className="flex flex-col gap-6">
+                <div ref={offersRef}>
+                  <PrintOffersPanel
+                    offers={offers}
+                    loading={loadingOffers}
+                    error={combinedOffersError}
+                    onChooseOffer={handleChooseOffer}
+                    selectedOfferId={selectedOfferId}
+                  />
+                </div>
+
+                {orderSuccess && (
+                  <div className="bg-corporate-secondary border border-corporate-accent/30 p-8 flex items-start gap-6">
+                    <div className="w-2 h-2 mt-1 bg-corporate-accent shrink-0" />
+                    <div>
+                      <p className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent uppercase mb-2">
+                        Order confirmed — {orderSuccess}
+                      </p>
+                      <p className="text-sm text-corporate-text-secondary">
+                        Order request created. Production assets are recorded. Payment remains pending until ingestion, validation and invoice generation.
+                      </p>
+                      <div className="mt-4 flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => selectedIntentId && setSelectedIntentId(selectedIntentId)}
+                          className="bg-corporate-accent hover:bg-corporate-accent-hover px-4 py-1.5 text-[10px] font-black uppercase tracking-monolith text-white transition-colors"
+                        >
+                          View Details & Preflight
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setOrderSuccess(null); setSelectedIntentId(null); }}
+                          className="text-[10px] font-technical font-black tracking-monolith text-corporate-muted hover:text-corporate-accent uppercase transition-colors"
+                        >
+                          [×] Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!pdfFile &&
+                  !bookPricePayload.total_page_count &&
+                  !loadingPdf &&
+                  !loadingOffers &&
+                  !offers && (
+                    <div className="flex-1 flex items-center justify-center border border-white/5 bg-corporate-secondary p-12">
+                      <div className="text-center text-corporate-muted font-technical text-xs tracking-widest uppercase">
+                        {t('enter_specs_or_upload_pdf')}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            </section>
+
+            {/* Production Files Step (v5.3) */}
+            {cart.length > 0 && (
+              <div ref={productionFilesRef} className="mt-8 border-t border-white/5 pt-12">
+                <ProductionFilesPanel
+                  cartItem={cart[0]}
+                  filesState={productionFiles}
+                  onFileSelect={handleProductionFileSelect}
+                  onUrlSelect={handleProductionFileUrlSelect}
+                  onFileRemove={handleProductionFileRemove}
+                  onContinue={handleCheckout}
+                  disabled={creatingOrder}
+                />
               </div>
             )}
-
-            {!pdfFile &&
-              !bookPricePayload.total_page_count &&
-              !loadingPdf &&
-              !loadingOffers &&
-              !offers && (
-                <div className="flex-1 flex items-center justify-center border border-white/5 bg-corporate-secondary p-12">
-                  <div className="text-center text-corporate-muted font-technical text-xs tracking-widest uppercase">
-                    {t('enter_specs_or_upload_pdf')}
-                  </div>
-                </div>
-              )}
-          </div>
-        </section>
-
-        {/* Production Files Step (v5.3) */}
-        {cart.length > 0 && (
-          <div ref={productionFilesRef} className="mt-8 border-t border-white/5 pt-12">
-            <ProductionFilesPanel
-              cartItem={cart[0]}
-              filesState={productionFiles}
-              onFileSelect={handleProductionFileSelect}
-              onUrlSelect={handleProductionFileUrlSelect}
-              onFileRemove={handleProductionFileRemove}
-              onContinue={handleCheckout}
-              disabled={creatingOrder}
-            />
+          </>
+        ) : (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <PrinthouseQueue />
           </div>
         )}
       </main>
@@ -1060,6 +1216,13 @@ const App: React.FC = () => {
             setUser(loggedInUser);
             setAuthModalOpen(false);
           }}
+        />
+      )}
+
+      {selectedIntentId && (
+        <OrderIntentDetails 
+          orderIntentId={selectedIntentId} 
+          onClose={() => setSelectedIntentId(null)} 
         />
       )}
 

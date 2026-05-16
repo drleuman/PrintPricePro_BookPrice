@@ -71,6 +71,7 @@ interface AuthUser {
   name?: string;
   token?: string;
   user_id?: string | number;
+  role?: string;
 }
 
 const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser) => void }> = ({ onClose, onLoginSuccess }) => {

@@ -78,7 +78,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
   useEffect(() => {
     const validSizes = payload.orientation === 'landscape' ? BOOK_SIZES_LANDSCAPE : BOOK_SIZES_PORTRAIT;
     if (!validSizes.includes(payload.book_size)) {
-      const nextPayload = { ...payload, book_size: validSizes[0] };
+      const nextPayload = { ...payload, book_size: validSizes[0] as any };
       setPayload(nextPayload);
       onPayloadChange(nextPayload);
     }
