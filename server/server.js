@@ -878,6 +878,120 @@ const performHardenedPDFValidation = async (filePath, role) => {
     };
 };
 
+const buildCanonicalOrderSnapshot = (orderIntent, session, resolvedOffer, interior, cover) => {
+    const specs = session.normalized_specs || session.input_specs || resolvedOffer.specs || {};
+    
+    // Defensive normalization
+    const normalizeNum = (v, fallback = 0) => {
+        const n = Number(v);
+        return isNaN(n) ? fallback : n;
+    };
+
+    const snapshot = {
+        order_intent_id: orderIntent.order_intent_id,
+        public_ref: orderIntent.public_ref,
+        status: orderIntent.status,
+        created_at: orderIntent.created_at,
+
+        offer: {
+            offer_session_id: orderIntent.offer.offer_session_id,
+            offer_id: orderIntent.offer.offer_id,
+            signature: resolvedOffer.signature || null,
+            printer_id: resolvedOffer.printer_id || null,
+            printer_name: resolvedOffer.printer_name || resolvedOffer.print_house || 'Unknown Printer',
+            print_house_id: resolvedOffer.print_house_id || resolvedOffer.printer_id || null,
+            print_house_name: resolvedOffer.print_house_name || resolvedOffer.print_house || 'Unknown Print House',
+            production_site: resolvedOffer.production_site || resolvedOffer.production_location || null,
+            currency: resolvedOffer.currency,
+            total_price: resolvedOffer.total_price,
+            subtotal: resolvedOffer.pricing_breakdown?.subtotal || resolvedOffer.total_price,
+            shipping: resolvedOffer.pricing_breakdown?.shipping || 0,
+            tax: resolvedOffer.pricing_breakdown?.tax || 0,
+            expires_at: session.expires_at
+        },
+
+        specs: {
+            copies: normalizeNum(specs.copies),
+            interior_pages: normalizeNum(specs.interior_pages),
+            cover_pages: normalizeNum(specs.cover_pages, 4),
+            total_pages: normalizeNum(specs.total_page_count || specs.interior_pages || 0) + normalizeNum(specs.cover_pages, 4),
+            book_size: specs.book_size || 'Custom',
+            format: specs.book_size || specs.format || 'Custom',
+            orientation: specs.orientation || 'portrait',
+            binding_method: specs.binding_method || 'N/A',
+            interior_print: specs.interior_print || '1/1',
+            cover_print: specs.cover_print || '4/0',
+            paper_type_interior: specs.paper_type_interior || 'offset',
+            paper_weight_interior: normalizeNum(specs.paper_weight_interior),
+            paper_type_cover: specs.paper_type_cover || 'mc',
+            paper_weight_cover: normalizeNum(specs.paper_weight_cover),
+            finishing_options: specs.finishing_options || '',
+            delivery_country: specs.delivery_country || ''
+        },
+
+        production_files: {
+            interior_pdf_file_id: interior.file_id,
+            cover_pdf_file_id: cover.file_id,
+            interior_pdf_status: interior.status,
+            cover_pdf_status: cover.status,
+            interior_pdf_filename: interior.filename,
+            cover_pdf_filename: cover.filename
+        },
+
+        lifecycle: {
+            marketplace: "SIGNED",
+            files: "UPLOADED",
+            preflight: "NOT_STARTED",
+            payment: "NOT_STARTED",
+            handoff: "NOT_READY"
+        },
+
+        preflight: {
+            enabled: PREFLIGHT_ENABLED,
+            mode: PREFLIGHT_ENABLED ? "external" : "disabled",
+            status: "NOT_STARTED",
+            blocking_payment: true,
+            jobs: []
+        },
+
+        payment: {
+            enabled: PAYMENTS_ENABLED,
+            provider: PAYMENT_PROVIDER,
+            status: "NOT_STARTED",
+            invoice_status: "NOT_CREATED"
+        },
+
+        control_plane: {
+            handoff_ready: false,
+            handoff_status: "PENDING_PREFLIGHT_AND_PAYMENT",
+            target: process.env.CONTROL_PLANE_URL || "control.printprice.pro",
+            payload_version: "budget-order-intent-v1"
+        }
+    };
+
+    console.log(`[ORDER_INTENT_SNAPSHOT_BUILT] id=${snapshot.order_intent_id} ref=${snapshot.public_ref} copies=${snapshot.specs.copies} pages=${snapshot.specs.total_pages} printer=${snapshot.offer.printer_name}`);
+    return snapshot;
+};
+
+const buildControlPlaneHandoffPayload = (orderIntent) => {
+    return {
+        version: "budget-order-intent-v1",
+        source: "budget.printprice.pro",
+        order_intent_id: orderIntent.order_intent_id,
+        public_ref: orderIntent.public_ref,
+        status: orderIntent.status,
+        lifecycle: orderIntent.lifecycle,
+        offer: orderIntent.offer,
+        specs: orderIntent.payload?.order_snapshot?.specs || {},
+        production_files: orderIntent.production_files,
+        customer: orderIntent.customer,
+        totals: orderIntent.totals,
+        preflight: orderIntent.preflight,
+        payment: orderIntent.payment,
+        created_at: orderIntent.created_at
+    };
+};
+
 // 🚀 PRODUCTION FILES: Upload Endpoint (v5.3 - Phase 3)
 app.post('/api/production-files/upload', async (req, res) => {
     upload.single('file')(req, res, async (err) => {
@@ -1696,6 +1810,7 @@ app.post('/api/order-intents', async (req, res) => {
     // 3. Create Order Intent
     const order_intent_id = `oi_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const public_ref = `PPOS-OI-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const session = await repositories.offerSessions.getById(offer_session_id);
 
     const intentRecord = {
         order_intent_id,
@@ -1707,7 +1822,7 @@ app.post('/api/order-intents', async (req, res) => {
         lifecycle: {
             quote_status: "SIGNED",
             files_status: "UPLOADED",
-            preflight_status: "PENDING",
+            preflight_status: "NOT_STARTED",
             invoice_status: "NOT_CREATED",
             payment_status: "NOT_STARTED",
             control_plane_order_status: "NOT_CREATED",
@@ -1738,7 +1853,25 @@ app.post('/api/order-intents', async (req, res) => {
         created_at: new Date().toISOString()
     };
 
+    // Build Canonical Snapshot
+    const snapshot = buildCanonicalOrderSnapshot(intentRecord, session, resolvedOffer, interior, cover);
+    intentRecord.payload = { order_snapshot: snapshot };
+
+    // Prepare Preflight
+    intentRecord.preflight = snapshot.preflight;
+    
+    // Prepare Payment
+    intentRecord.payment = snapshot.payment;
+
+    // Prepare Control Plane Handoff
+    const handoffPayload = buildControlPlaneHandoffPayload(intentRecord);
+    intentRecord.control_plane = {
+        ...snapshot.control_plane,
+        payload: handoffPayload
+    };
+
     await repositories.orderIntents.create(intentRecord);
+    console.log(`[ORDER_INTENT_PERSISTED] id=${order_intent_id} status=${intentRecord.status} lifecycle=${intentRecord.lifecycle.quote_status}`);
 
     // 4. Update Registry Associations
     await repositories.productionFiles.updateAssociation(production_files.interior_pdf_file_id, { order_intent_id });

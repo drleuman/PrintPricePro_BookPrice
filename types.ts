@@ -539,6 +539,10 @@ export interface OrderIntent {
   dispatch_package_id?: string;
   invoice?: OrderIntentInvoice;
   payment?: OrderIntentPayment;
+  payload?: {
+    order_snapshot?: any;
+    [key: string]: any;
+  };
   created_at: string;
   updated_at: string;
   is_intent?: boolean; // UI helper

@@ -7,21 +7,23 @@ module.exports = {
             INSERT INTO marketplace_audit_events (
                 event_id, entity_type, entity_id, event_type, 
                 actor_type, actor_id, session_id, ip_hash, 
-                payload_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                payload, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         const event_id = event.event_id || `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+        const payloadStr = JSON.stringify(event.payload || {});
         const params = [
             event_id,
             event.entity_type,
             event.entity_id,
             event.event_type,
             event.actor_type || 'SYSTEM',
-            event.actor_id,
-            event.session_id,
+            event.actor_id || null,
+            event.session_id || null,
             event.ip ? crypto.createHash('sha256').update(event.ip).digest('hex') : null,
-            JSON.stringify(event.payload || {}),
+            payloadStr,
+            payloadStr,
             event.created_at || new Date().toISOString()
         ];
         
@@ -40,7 +42,7 @@ module.exports = {
         const rows = await query(sql, [entity_type, entity_id]);
         return rows.map(row => ({
             ...row,
-            payload: typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json
+            payload: typeof (row.payload || row.payload_json) === 'string' ? JSON.parse(row.payload || row.payload_json) : (row.payload || row.payload_json)
         }));
     },
 

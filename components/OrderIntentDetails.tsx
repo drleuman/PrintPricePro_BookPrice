@@ -13,6 +13,7 @@ import {
   InformationCircleIcon,
   TruckIcon,
   CheckBadgeIcon,
+  ArrowLeftIcon,
 } from '@heroicons/react/24/outline';
 import { OrderIntent } from '../types';
 import OrderIntentPreflightPanel from './OrderIntentPreflightPanel';
@@ -20,9 +21,10 @@ import OrderIntentPreflightPanel from './OrderIntentPreflightPanel';
 interface Props {
   orderIntentId: string;
   onClose: () => void;
+  onReset?: () => void;
 }
 
-const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose }) => {
+const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }) => {
   const [intent, setIntent] = useState<OrderIntent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,12 +85,81 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose }) => {
     );
   }
 
+  // Formatting Helpers
+  const normalizeNum = (val: any, fallback = 0) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = Number(val);
+    return isNaN(n) ? fallback : n;
+  };
+
+  const normalizeText = (val: any, fallback = 'N/A') => {
+    if (val === undefined || val === null || val === '') return fallback;
+    return String(val);
+  };
+
+  const normalizeBinding = (val: any) => {
+    const text = normalizeText(val);
+    if (text === 'N/A') return 'N/A';
+    return text.replace(/_/g, ' ').toUpperCase();
+  };
+
+  // Specs resolution with priority: payload > offer_snapshot > raw_specs
+  const snapshot = intent.payload?.order_snapshot;
+  const rawSpecs = intent.offer.selected_offer_snapshot?.raw_offer_snapshot?.specs || intent.offer.selected_offer_snapshot?.specs || {};
+  
+  const specs = {
+    format: normalizeText(snapshot?.specs?.format || rawSpecs?.book_size || rawSpecs?.format, 'Custom'),
+    copies: normalizeNum(snapshot?.specs?.copies || rawSpecs?.copies, 0),
+    pages: normalizeNum(snapshot?.specs?.interior_pages || rawSpecs?.interior_pages || snapshot?.specs?.total_pages, 0),
+    binding: normalizeBinding(snapshot?.specs?.binding_method || rawSpecs?.binding_method),
+    printer: normalizeText(snapshot?.offer?.printer_name || intent.offer.selected_offer_snapshot?.printer_name, 'Unknown'),
+    country: normalizeText(snapshot?.specs?.delivery_country || rawSpecs?.delivery_country, ''),
+    site: normalizeText(snapshot?.offer?.production_site || intent.offer.selected_offer_snapshot?.production_site || intent.offer.selected_offer_snapshot?.printer_name, 'Selected Printer')
+  };
+
+  if (process.env.NODE_ENV === 'development') {
+    console.debug('[ORDER_VIEW_HYDRATION]', {
+        intent_id: intent.order_intent_id,
+        has_payload: Boolean(intent.payload),
+        has_snapshot: Boolean(snapshot),
+        specs_source: snapshot ? 'CANONICAL_SNAPSHOT' : 'OFFER_FALLBACK',
+        specs
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-corporate-secondary/90 backdrop-blur-xl p-4 md:p-8 overflow-y-auto">
       <div className="relative w-full max-w-[1000px] bg-corporate-primary border border-white/10 shadow-[0_0_150px_rgba(0,0,0,0.6)] flex flex-col">
         {/* Header Bar */}
         <div className="h-[2px] w-full bg-corporate-accent" />
         
+        {/* Navigation Bar (v5.3 Hardening) */}
+        <div className="flex items-center justify-between px-8 py-3 bg-corporate-secondary/50 border-b border-white/5">
+          <button 
+            onClick={() => {
+                if (onReset) onReset();
+                else onClose();
+            }}
+            className="flex items-center gap-2 text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted hover:text-corporate-accent transition-colors"
+          >
+            <ArrowLeftIcon className="w-3.5 h-3.5" />
+            Back to Marketplace
+          </button>
+          
+          <div className="hidden md:flex items-center gap-3 px-4 py-1.5 bg-corporate-primary/50 border border-white/5">
+             <span className="text-[0.6rem] font-technical uppercase text-corporate-muted">Order Request</span>
+             <span className="text-[0.7rem] font-mono font-bold text-corporate-accent tracking-tighter">{intent.public_ref}</span>
+          </div>
+
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-2 text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted hover:text-corporate-accent transition-colors"
+          >
+            Close
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+
         {/* Top Header */}
         <div className="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-corporate-elevated/30">
           <div className="flex items-center gap-4">
@@ -109,9 +180,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose }) => {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-corporate-muted hover:text-corporate-accent transition-colors">
-            <XMarkIcon className="w-6 h-6" />
-          </button>
+          {/* Removed the small X button here as we have the navigation bar */}
         </div>
 
         <div className="flex-1 p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -137,6 +206,14 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose }) => {
                 ))}
             </div>
 
+            {/* Defensive Copy Note */}
+            <div className="bg-green-500/5 border border-white/5 p-4 flex items-start gap-4">
+                <CheckBadgeIcon className="w-5 h-5 text-green-500 shrink-0" />
+                <p className="text-[0.7rem] text-corporate-text-secondary leading-relaxed font-technical">
+                    Your order request has been saved. You can safely return to the marketplace or close this view. Your configuration and uploaded files are preserved in our industrial ledger.
+                </p>
+            </div>
+
             {/* Preflight Section */}
             <OrderIntentPreflightPanel 
                 orderIntent={intent} 
@@ -151,24 +228,30 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose }) => {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-8">
                     <div>
                         <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Format</span>
-                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase">{intent.offer.selected_offer_snapshot.raw_offer_snapshot?.specs?.book_size || 'Custom'}</span>
+                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase">{specs.format}</span>
                     </div>
                     <div>
                         <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Copies</span>
-                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary tabular-nums">{intent.offer.selected_offer_snapshot.raw_offer_snapshot?.specs?.copies || 0}</span>
+                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary tabular-nums">{specs.copies}</span>
                     </div>
                      <div>
                         <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Pages</span>
-                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary tabular-nums">{intent.offer.selected_offer_snapshot.raw_offer_snapshot?.specs?.interior_pages || 0}</span>
+                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary tabular-nums">{specs.pages}</span>
                     </div>
                     <div>
                         <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Binding</span>
-                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase">{intent.offer.selected_offer_snapshot.raw_offer_snapshot?.specs?.binding_method?.replace('_', ' ') || 'N/A'}</span>
+                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase">{specs.binding}</span>
                     </div>
                      <div>
                         <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Printer</span>
-                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase truncate">{intent.offer.selected_offer_snapshot.printer_name}</span>
+                        <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase truncate">{specs.printer}</span>
                     </div>
+                    {specs.country && (
+                        <div>
+                            <span className="text-[0.6rem] font-technical uppercase text-corporate-muted block">Delivery To</span>
+                            <span className="text-[0.75rem] font-bold text-corporate-text-secondary uppercase">{specs.country}</span>
+                        </div>
+                    )}
                 </div>
             </div>
           </div>

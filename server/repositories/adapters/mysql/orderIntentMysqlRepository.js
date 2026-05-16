@@ -9,18 +9,19 @@ function mapFromDb(row) {
         cart_id: row.cart_id,
         user_id: row.user_id,
         status: row.status,
-        lifecycle: typeof row.lifecycle_json === 'string' ? JSON.parse(row.lifecycle_json) : row.lifecycle_json,
-        offer: typeof row.offer_json === 'string' ? JSON.parse(row.offer_json) : row.offer_json,
-        production_files: typeof row.production_files_json === 'string' ? JSON.parse(row.production_files_json) : row.production_files_json,
-        customer: typeof row.customer_json === 'string' ? JSON.parse(row.customer_json) : row.customer_json,
-        totals: typeof row.totals_json === 'string' ? JSON.parse(row.totals_json) : row.totals_json,
-        preflight: typeof row.preflight_json === 'string' ? JSON.parse(row.preflight_json) : row.preflight_json,
-        invoice: typeof row.invoice_json === 'string' ? JSON.parse(row.invoice_json) : row.invoice_json,
-        payment: typeof row.payment_json === 'string' ? JSON.parse(row.payment_json) : row.payment_json,
-        control_plane: typeof row.control_plane_json === 'string' ? JSON.parse(row.control_plane_json) : row.control_plane_json,
-        printhouse_handoff: typeof row.printhouse_handoff_json === 'string' ? JSON.parse(row.printhouse_handoff_json) : row.printhouse_handoff_json,
-        exception: typeof row.exception_json === 'string' ? JSON.parse(row.exception_json) : row.exception_json,
-        production_files_history: typeof row.production_files_history_json === 'string' ? JSON.parse(row.production_files_history_json) : row.production_files_history_json,
+        payload: typeof (row.payload || row.payload_json) === 'string' ? JSON.parse(row.payload || row.payload_json) : (row.payload || row.payload_json),
+        lifecycle: typeof (row.lifecycle || row.lifecycle_json) === 'string' ? JSON.parse(row.lifecycle || row.lifecycle_json) : (row.lifecycle || row.lifecycle_json),
+        offer: typeof (row.offer || row.offer_json) === 'string' ? JSON.parse(row.offer || row.offer_json) : (row.offer || row.offer_json),
+        production_files: typeof (row.production_files || row.production_files_json) === 'string' ? JSON.parse(row.production_files || row.production_files_json) : (row.production_files || row.production_files_json),
+        customer: typeof (row.customer || row.customer_json) === 'string' ? JSON.parse(row.customer || row.customer_json) : (row.customer || row.customer_json),
+        totals: typeof (row.totals || row.totals_json) === 'string' ? JSON.parse(row.totals || row.totals_json) : (row.totals || row.totals_json),
+        preflight: typeof (row.preflight || row.preflight_json) === 'string' ? JSON.parse(row.preflight || row.preflight_json) : (row.preflight || row.preflight_json),
+        invoice: typeof (row.invoice || row.invoice_json) === 'string' ? JSON.parse(row.invoice || row.invoice_json) : (row.invoice || row.invoice_json),
+        payment: typeof (row.payment || row.payment_json) === 'string' ? JSON.parse(row.payment || row.payment_json) : (row.payment || row.payment_json),
+        control_plane: typeof (row.control_plane || row.control_plane_json) === 'string' ? JSON.parse(row.control_plane || row.control_plane_json) : (row.control_plane || row.control_plane_json),
+        printhouse_handoff: typeof (row.printhouse_handoff || row.printhouse_handoff_json) === 'string' ? JSON.parse(row.printhouse_handoff || row.printhouse_handoff_json) : (row.printhouse_handoff || row.printhouse_handoff_json),
+        exception: typeof (row.exception || row.exception_json) === 'string' ? JSON.parse(row.exception || row.exception_json) : (row.exception || row.exception_json),
+        production_files_history: typeof (row.production_files_history || row.production_files_history_json) === 'string' ? JSON.parse(row.production_files_history || row.production_files_history_json) : (row.production_files_history || row.production_files_history_json),
         metadata: typeof row.metadata_json === 'string' ? JSON.parse(row.metadata_json) : row.metadata_json,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -34,23 +35,41 @@ module.exports = {
         const sql = `
             INSERT INTO marketplace_order_intents (
                 order_intent_id, public_ref, session_id, cart_id, user_id, status,
-                lifecycle_json, offer_json, production_files_json, customer_json,
-                totals_json, preflight_json, invoice_json, payment_json,
-                control_plane_json, printhouse_handoff_json, 
-                exception_json, production_files_history_json,
+                payload,
+                lifecycle, lifecycle_json, 
+                offer, offer_json, 
+                production_files, production_files_json, 
+                customer, customer_json,
+                totals, totals_json, 
+                preflight, preflight_json, 
+                invoice, invoice_json, 
+                payment, payment_json,
+                control_plane, control_plane_json, 
+                printhouse_handoff, printhouse_handoff_json, 
+                exception, exception_json, 
+                production_files_history, production_files_history_json,
                 metadata_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
+        const safeJson = (val) => val === undefined ? null : JSON.stringify(val);
+
         const params = [
-            record.order_intent_id, record.public_ref, record.session_id, record.cart_id, record.user_id, record.status,
-            JSON.stringify(record.lifecycle || {}), JSON.stringify(record.offer || {}),
-            JSON.stringify(record.production_files || {}), JSON.stringify(record.customer || {}),
-            JSON.stringify(record.totals || {}), JSON.stringify(record.preflight || {}),
-            JSON.stringify(record.invoice || {}), JSON.stringify(record.payment || {}),
-            JSON.stringify(record.control_plane || {}), JSON.stringify(record.printhouse_handoff || {}),
-            JSON.stringify(record.exception || {}), JSON.stringify(record.production_files_history || []),
-            JSON.stringify(record.metadata || {}),
+            record.order_intent_id, record.public_ref, record.session_id, record.cart_id || null, record.user_id || null, record.status,
+            safeJson(record.payload),
+            safeJson(record.lifecycle), safeJson(record.lifecycle),
+            safeJson(record.offer), safeJson(record.offer),
+            safeJson(record.production_files), safeJson(record.production_files),
+            safeJson(record.customer), safeJson(record.customer),
+            safeJson(record.totals), safeJson(record.totals),
+            safeJson(record.preflight), safeJson(record.preflight),
+            safeJson(record.invoice), safeJson(record.invoice),
+            safeJson(record.payment), safeJson(record.payment),
+            safeJson(record.control_plane), safeJson(record.control_plane),
+            safeJson(record.printhouse_handoff), safeJson(record.printhouse_handoff),
+            safeJson(record.exception), safeJson(record.exception),
+            safeJson(record.production_files_history), safeJson(record.production_files_history),
+            safeJson(record.metadata),
             record.created_at || new Date().toISOString(), new Date().toISOString()
         ];
         
@@ -84,15 +103,19 @@ module.exports = {
         const params = [];
         
         const jsonFields = [
-            'lifecycle', 'offer', 'production_files', 'customer', 'totals', 
+            'payload', 'lifecycle', 'offer', 'production_files', 'customer', 'totals', 
             'preflight', 'invoice', 'payment', 'control_plane', 'printhouse_handoff', 
             'exception', 'production_files_history', 'metadata'
         ];
         
         jsonFields.forEach(key => {
             if (key in patch) {
+                const val = patch[key] === undefined ? null : JSON.stringify(patch[key]);
+                fields.push(`${key} = ?`);
+                params.push(val);
+                // Also update the _json version for compatibility
                 fields.push(`${key}_json = ?`);
-                params.push(JSON.stringify(patch[key]));
+                params.push(val);
             }
         });
         

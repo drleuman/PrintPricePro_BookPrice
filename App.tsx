@@ -185,6 +185,50 @@ const getOrCreateSessionId = () => {
 // ==== Defensive Guard: Public Console Access ====
 const ENABLE_PUBLIC_CONSOLE = import.meta.env.VITE_ENABLE_PUBLIC_CONSOLE === 'true';
 
+const INITIAL_BOOK_PRICE_PAYLOAD: InitialBookPricePayload = {
+  // Basic info
+  copies: 1000,
+  interior_pages: 120,
+  cover_pages: 4,
+  book_size: 'A5',
+  orientation: 'portrait',
+  delivery_country: 'ES',
+
+  // Print options
+  interior_print: '4/4',
+  cover_print: '4/0',
+  cover_print_rev: 0,
+
+  // Paper types
+  paper_type_interior: 'offset',
+  paper_type_cover: 'mc',
+  paper_type_endpaper: 'offset',
+
+  // Paper weights (gsm)
+  paper_weight_interior: 100,
+  paper_weight_cover: 240,
+  paper_weight_endpapers: 140,
+
+  // PMS colors
+  pms_interior: 0,
+  pms_cover: 0,
+
+  // Binding & finishing
+  binding_method: 'flexibound',
+  finishing_options: 'matt_lam_scratch',
+  uv_varnish: false,
+
+  // Endpapers
+  endpapers: 'none',
+  endpapers_print: '',
+
+  // Extra costs
+  extra_book: 0,
+  extra_section: 0,
+  extra_fixed: 0,
+  extra_variable: 0,
+};
+
 const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'marketplace' | 'printhouse'>('marketplace');
@@ -213,49 +257,7 @@ const App: React.FC = () => {
   }, [isDark]);
 
   const [bookPricePayload, setBookPricePayload] =
-    useState<InitialBookPricePayload>({
-      // Basic info
-      copies: 1000,
-      interior_pages: 120,
-      cover_pages: 4,
-      book_size: 'A5',
-      orientation: 'portrait',
-      delivery_country: 'ES',
-
-      // Print options
-      interior_print: '4/4',
-      cover_print: '4/0',
-      cover_print_rev: 0,
-
-      // Paper types
-      paper_type_interior: 'offset',
-      paper_type_cover: 'artboard',
-      paper_type_endpaper: 'offset',
-
-      // Paper weights (gsm)
-      paper_weight_interior: 100,
-      paper_weight_cover: 240,
-      paper_weight_endpapers: 140,
-
-      // PMS colors
-      pms_interior: 0,
-      pms_cover: 0,
-
-      // Binding & finishing
-      binding_method: 'flexibound',
-      finishing_options: 'matt_lam_scratch',
-      uv_varnish: false,
-
-      // Endpapers
-      endpapers: 'none',
-      endpapers_print: '',
-
-      // Extra costs
-      extra_book: 0,
-      extra_section: 0,
-      extra_fixed: 0,
-      extra_variable: 0,
-    });
+    useState<InitialBookPricePayload>(INITIAL_BOOK_PRICE_PAYLOAD);
 
   const [offers, setOffers] = useState<BookPriceResponse | null>(null);
   const [loadingPdf, setLoadingPdf] = useState<boolean>(false);
@@ -1249,6 +1251,15 @@ const App: React.FC = () => {
         <OrderIntentDetails 
           orderIntentId={selectedIntentId} 
           onClose={() => setSelectedIntentId(null)} 
+          onReset={() => {
+            setSelectedIntentId(null);
+            setOrderSuccess(null);
+            setOffers(null);
+            setPdfFile(null);
+            setPageCount(0);
+            setBookPricePayload(INITIAL_BOOK_PRICE_PAYLOAD);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
       )}
 
