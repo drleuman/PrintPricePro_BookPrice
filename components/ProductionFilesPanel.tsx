@@ -243,7 +243,13 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
   const interiorHasWarnings = filesState.interior_pdf.status === 'UPLOADED_WITH_WARNINGS';
   const coverHasWarnings = filesState.cover_spine_back_pdf.status === 'UPLOADED_WITH_WARNINGS';
 
-  const allReady = isInteriorReady && isCoverReady && !interiorHasWarnings && !coverHasWarnings;
+  const allReady = 
+    isInteriorReady && 
+    isCoverReady && 
+    !interiorHasWarnings && 
+    !coverHasWarnings &&
+    !!filesState.interior_pdf.file_id && 
+    !!filesState.cover_spine_back_pdf.file_id;
 
   const selectedOfferPriceRaw = cartItem.pricing?.total_price ?? cartItem.offer.total_price ?? cartItem.offer.total_cost ?? 0;
   const selectedOfferPrice = Number(selectedOfferPriceRaw);

@@ -643,14 +643,17 @@ const App: React.FC = () => {
       }));
 
       try {
+        const cartItem = cart[0];
         const uploadedMetadata = await uploadProductionFile(file, kind, { 
-          session_id: sessionId.current 
+          session_id: cartItem?.offer_session_id || sessionId.current,
+          cart_id: cartItem?.id
         });
         
         setProductionFiles(prev => ({
           ...prev,
           [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
-            ...uploadedMetadata
+            ...uploadedMetadata,
+            status: 'UPLOADED' // Force UPLOADED status on success
           }
         }));
 
@@ -935,6 +938,17 @@ const App: React.FC = () => {
         addToast({
           variant: 'error',
           title: 'Production files required',
+          body: msg,
+        });
+        return;
+      }
+
+      if (!productionFiles.interior_pdf.file_id || !productionFiles.cover_spine_back_pdf.file_id) {
+        const msg = 'One or more production files are missing their server identity. Please re-upload.';
+        setOrderError(msg);
+        addToast({
+          variant: 'error',
+          title: 'Files identity missing',
           body: msg,
         });
         return;
