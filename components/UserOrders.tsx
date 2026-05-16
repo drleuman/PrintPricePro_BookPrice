@@ -37,7 +37,7 @@ interface Order {
 }
 
 interface UserOrdersProps {
-  userId: string | number;
+  userId?: string | number;
   onClose: () => void;
 }
 
@@ -90,10 +90,17 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/orders?user_id=${encodeURIComponent(userId)}`);
+        const query = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+        const res = await fetch(`/api/order-intents${query}`, {
+          credentials: 'include'
+        });
         
         if (res.status === 403) {
             setError("ACCESS_DENIED: You are not authorized to view these orders.");
+            return;
+        }
+        if (res.status === 401) {
+            setError("AUTH_REQUIRED: Please log in to see your orders.");
             return;
         }
         if (res.status === 429) {
@@ -106,7 +113,14 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
           setError(data?.error || data?.message || 'Failed to load orders.');
           return;
         }
-        setOrders(data.orders ?? []);
+        
+        // Handle both 'orders' and 'order_intents' keys for robustness
+        const list = data.orders || data.order_intents || [];
+        setOrders(list.map((o: any) => ({
+          ...o,
+          id: o.order_intent_id || o.id,
+          order_ref: o.public_ref || o.order_ref
+        })));
         setCurrentPage(1);
       } catch {
         setError('Connection error. Please try again.');
@@ -187,11 +201,22 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
           )}
 
           {!loading && !error && orders.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <ClipboardDocumentListIcon className="w-12 h-12 text-corporate-muted opacity-30" />
-              <p className="text-[0.75rem] font-technical text-corporate-muted uppercase tracking-widest">
-                No orders yet
-              </p>
+            <div className="flex flex-col items-center justify-center py-20 gap-4 border border-white/5 bg-corporate-primary/30">
+              <ClipboardDocumentListIcon className="w-12 h-12 text-corporate-muted opacity-20" />
+              <div className="text-center space-y-1">
+                <p className="text-[0.7rem] font-technical font-black text-corporate-muted uppercase tracking-monolith">
+                  No orders yet
+                </p>
+                <p className="text-[0.6rem] text-corporate-muted uppercase tracking-[0.2em] font-mono">
+                  Your order history will appear here.
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="mt-4 px-6 py-2 bg-corporate-accent hover:bg-corporate-accent-hover text-white text-[10px] font-black uppercase tracking-monolith transition-colors shadow-lg shadow-corporate-accent/20"
+              >
+                Back to Marketplace
+              </button>
             </div>
           )}
 

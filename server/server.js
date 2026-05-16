@@ -1919,33 +1919,53 @@ app.get('/api/order-intents/:id', async (req, res) => {
 
 app.get('/api/order-intents', async (req, res) => {
     const identity = resolveRequestIdentity(req);
+    console.log(`[MY_ORDERS_LIST_REQUEST] session=${identity.sessionId} user_id=${identity.user?.id || 'none'}`);
+
     const { session_id, user_id } = req.query;
     const targetSessionId = session_id || identity.sessionId;
 
     let intents = [];
-    if (user_id) {
-        // TODO: Replace with authenticated identity resolution in production
-        intents = await repositories.orderIntents.listByUser(user_id);
-    } else if (targetSessionId) {
-        intents = await repositories.orderIntents.listBySession(targetSessionId);
-    } else {
-        return res.status(400).json({ error: "MISSING_QUERY", message: "session_id or user_id is required." });
+    try {
+        if (user_id) {
+            intents = await repositories.orderIntents.listByUser(user_id);
+        } else if (targetSessionId) {
+            intents = await repositories.orderIntents.listBySession(targetSessionId);
+        } else {
+            console.warn(`[MY_ORDERS_LIST_DENIED] reason=MISSING_IDENTITY ip=${req.ip}`);
+            return res.status(400).json({ error: "MISSING_QUERY", message: "session_id or user_id is required." });
+        }
+
+        // Ownership check (double-safe filter)
+        const allowedIntents = intents.filter(i => assertOrderIntentAccess(req, i));
+        
+        console.log(`[MY_ORDERS_LIST_RESULT] count=${allowedIntents.length} session=${identity.sessionId}`);
+
+        res.json({
+            ok: true,
+            orders: allowedIntents.map(i => ({
+                order_intent_id: i.order_intent_id,
+                public_ref: i.public_ref,
+                status: i.status,
+                lifecycle: i.lifecycle,
+                totals: i.totals,
+                created_at: i.created_at,
+                // v5.3: Include metadata for rich listing
+                specs: i.payload?.order_snapshot?.specs || i.offer?.selected_offer_snapshot?.raw_offer_snapshot?.specs || {},
+                offer: i.offer?.selected_offer_snapshot || {},
+                production_files: i.production_files || {}
+            })),
+            // Maintain backward compatibility for any existing consumers
+            order_intents: allowedIntents.map(i => ({
+                order_intent_id: i.order_intent_id,
+                public_ref: i.public_ref,
+                status: i.status,
+                created_at: i.created_at
+            }))
+        });
+    } catch (err) {
+        console.error(`[MY_ORDERS_LIST_FAILED] error=${err.message}`);
+        res.status(500).json({ ok: false, error: "INTERNAL_ERROR", message: "Unable to load orders. Please try again." });
     }
-
-    // Ownership check (double-safe filter)
-    const allowedIntents = intents.filter(i => assertOrderIntentAccess(req, i));
-
-    res.json({
-        ok: true,
-        order_intents: allowedIntents.map(i => ({
-            order_intent_id: i.order_intent_id,
-            public_ref: i.public_ref,
-            status: i.status,
-            lifecycle: i.lifecycle,
-            totals: i.totals,
-            created_at: i.created_at
-        }))
-    });
 });
 
 // Compatibility endpoint for "My Orders" panel

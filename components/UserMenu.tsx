@@ -462,27 +462,21 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
               )}
             </div>
 
-            {/* Actions */}
-            {!user && (
-              <div className="p-2 flex flex-col gap-0.5">
+            {/* Actions for all users */}
+            <div className="p-2 flex flex-col gap-0.5">
+              {!user && (
                 <MenuButton
                   icon={<UserIcon className="w-4 h-4" />}
                   label="Sign in"
                   onClick={openSignIn}
                 />
-              </div>
-            )}
-
-            {/* Authenticated actions */}
-            {user && (
-              <div className="p-2 flex flex-col gap-0.5">
-                <MenuButton
-                  icon={<ClipboardDocumentListIcon className="w-4 h-4" />}
-                  label="My Orders"
-                  onClick={() => { setIsOpen(false); setShowOrders(true); }}
-                />
-              </div>
-            )}
+              )}
+              <MenuButton
+                icon={<ClipboardDocumentListIcon className="w-4 h-4" />}
+                label="My Orders"
+                onClick={() => { setIsOpen(false); setShowOrders(true); }}
+              />
+            </div>
 
             {/* Sign out */}
             {user && (
@@ -499,9 +493,9 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
         )}
       </div>
 
-      {showOrders && user?.user_id && (
+      {showOrders && (
         <UserOrders
-          userId={user.user_id}
+          userId={user?.user_id}
           onClose={() => setShowOrders(false)}
         />
       )}

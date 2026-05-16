@@ -60,6 +60,7 @@ import {
 import { t } from './i18n/en';
 import OrderIntentDetails from './components/OrderIntentDetails';
 import { PrinthouseQueue } from './components/PrinthouseQueue';
+import UserOrders from './components/UserOrders';
 
 // ==== Helpers para extraer info del PDF ====
 
@@ -273,6 +274,7 @@ const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [selectedIntentId, setSelectedIntentId] = useState<string | null>(null);
+  const [showMyOrders, setShowMyOrders] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastIdRef = useRef(0);
@@ -1083,6 +1085,10 @@ const App: React.FC = () => {
       <Header
         cartCount={cart.length}
         onCartClick={() => setIsCartOpen(prev => !prev)}
+        onMyOrdersClick={() => {
+          setShowMyOrders(true);
+          setIsCartOpen(false);
+        }}
         isDark={isDark}
         onThemeToggle={() => setIsDark(prev => !prev)}
         user={user}
@@ -1268,6 +1274,13 @@ const App: React.FC = () => {
       )}
 
       <Toast toasts={toasts} onDismiss={dismissToast} />
+
+      {showMyOrders && (
+        <UserOrders 
+          userId={user?.user_id} 
+          onClose={() => setShowMyOrders(false)} 
+        />
+      )}
     </div>
   );
 };
