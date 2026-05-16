@@ -882,13 +882,53 @@ const performHardenedPDFValidation = async (filePath, role) => {
 app.post('/api/production-files/upload', async (req, res) => {
     upload.single('file')(req, res, async (err) => {
         if (err instanceof multer.MulterError) {
+            console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
+                reason: err.code,
+                message: err.message,
+                body: req.body,
+                body_keys: Object.keys(req.body || {})
+            });
+
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(400).json({ error: "FILE_TOO_LARGE", message: `File too large. Max size is ${MAX_FILE_SIZE_MB}MB.` });
+                return res.status(400).json({
+                    error: "FILE_TOO_LARGE",
+                    reason: "LIMIT_FILE_SIZE",
+                    message: `File too large. Max size is ${MAX_FILE_SIZE_MB}MB.`
+                });
             }
-            return res.status(400).json({ error: "UPLOAD_ERROR", message: err.message });
+
+            return res.status(400).json({
+                error: "UPLOAD_ERROR",
+                reason: err.code || "MULTER_ERROR",
+                message: err.message
+            });
         } else if (err) {
-            return res.status(400).json({ error: "INVALID_FILE", message: err.message });
+            console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
+                reason: "FILE_FILTER_REJECTED",
+                message: err.message,
+                body: req.body,
+                body_keys: Object.keys(req.body || {})
+            });
+
+            return res.status(400).json({
+                error: "INVALID_FILE",
+                reason: "FILE_FILTER_REJECTED",
+                message: err.message
+            });
         }
+
+        console.error("[PRODUCTION_FILE_UPLOAD_DEBUG]", {
+            has_file: Boolean(req.file),
+            file: req.file ? {
+                fieldname: req.file.fieldname,
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size,
+                path: req.file.path
+            } : null,
+            body: req.body,
+            body_keys: Object.keys(req.body || {})
+        });
 
         if (!req.file) {
             return res.status(400).json({ error: "EMPTY_FILE", message: "No file uploaded or file is empty." });
@@ -904,8 +944,26 @@ app.post('/api/production-files/upload', async (req, res) => {
         const { role, cart_id, session_id, order_intent_id, user_id } = req.body;
         const identity = resolveRequestIdentity(req);
         if (!['INTERIOR_PDF', 'COVER_PDF'].includes(role)) {
+            console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
+                reason: "INVALID_ROLE",
+                received_role: role,
+                body: req.body,
+                body_keys: Object.keys(req.body || {}),
+                has_file: Boolean(req.file),
+                file: req.file ? {
+                    fieldname: req.file.fieldname,
+                    originalname: req.file.originalname,
+                    mimetype: req.file.mimetype,
+                    size: req.file.size
+                } : null
+            });
+
             fs.unlinkSync(filePath);
-            return res.status(400).json({ error: "INVALID_ROLE", message: "Invalid role. Must be INTERIOR_PDF or COVER_PDF." });
+            return res.status(400).json({
+                error: "INVALID_ROLE",
+                reason: "INVALID_ROLE",
+                message: "Invalid role. Must be INTERIOR_PDF or COVER_PDF."
+            });
         }
 
         try {
