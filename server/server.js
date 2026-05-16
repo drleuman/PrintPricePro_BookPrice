@@ -34,6 +34,7 @@ const repositories = require('./repositories');
 })();
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://localhost:3001,https://budget.printprice.pro,https://printprice.pro')
     .split(',')
@@ -628,49 +629,102 @@ const mapProductionFilesToOrderStatus = (productionFiles) => {
 
 // ---- Offer Session Signing Helpers (v5.3 - Phase 4 Business Logic) ----
 
+function stableStringify(value) {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
 
-function normalizeSignatureDate(value) {
-    if (!value) return '';
-    if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) {
+    return '[' + value.map(stableStringify).join(',') + ']';
+  }
 
-    const s = String(value);
-
-    // already ISO-like
-    if (s.includes('T') && s.endsWith('Z')) return s;
-
-    // MySQL DATETIME fallback: "YYYY-MM-DD HH:mm:ss"
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) {
-        return new Date(s.replace(' ', 'T') + 'Z').toISOString();
-    }
-
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-
-    return s;
+  return '{' + Object.keys(value)
+    .sort()
+    .map((key) => JSON.stringify(key) + ':' + stableStringify(value[key]))
+    .join(',') + '}';
 }
 
-const signOfferPayload = (payload) => {
-    // Stable fields for signature: session_id, offer_id, printer_id, total_price, currency, spec_hash, expires_at
-    const specHash = crypto.createHash('sha256').update(JSON.stringify(payload.specs || {})).digest('hex');
-    const baseString = [
-        payload.offer_session_id,
-        payload.offer_id,
-        payload.printer_id || payload.print_house || '',
-        payload.total_price,
-        payload.currency,
-        specHash,
-        normalizeSignatureDate(payload.expires_at)
-    ].join('|');
+function stableHash(value) {
+  return crypto
+    .createHash('sha256')
+    .update(stableStringify(value || {}))
+    .digest('hex');
+}
 
-    return crypto.createHmac('sha256', OFFER_SIGNING_SECRET).update(baseString).digest('hex');
-};
+function normalizeSignatureDate(value) {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString();
 
-const verifyOfferSignature = (offer, signature) => {
-    const computed = signOfferPayload(offer);
-    const valid = computed === signature;
-    if (!valid) console.error(`[OFFER_SIGNATURE_INVALID] offer_id=${offer.offer_id} session_id=${offer.offer_session_id}`);
-    return valid;
-};
+  const s = String(value);
+
+  // already ISO-like
+  if (s.includes('T') && s.endsWith('Z')) return s;
+
+  // MySQL DATETIME fallback: "YYYY-MM-DD HH:mm:ss"
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s)) {
+    return new Date(s.replace(' ', 'T') + 'Z').toISOString();
+  }
+
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+
+  return s;
+}
+
+function normalizeMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+}
+
+function buildOfferSignaturePayload(payload) {
+  const specs =
+    payload.specs ||
+    payload.normalized_specs ||
+    payload.normalizedSpecs ||
+    {};
+
+  const specsHash =
+    payload.specs_hash ||
+    payload.specsHash ||
+    stableHash(specs);
+
+  return {
+    offer_session_id: String(payload.offer_session_id || payload.offerSessionId || ''),
+    offer_id: String(payload.offer_id || payload.id || ''),
+    printer_id: String(payload.printer_id || payload.printerId || payload.print_house_id || payload.printHouseId || ''),
+    total_price: normalizeMoney(payload.total_price ?? payload.price ?? payload.total ?? 0),
+    currency: String(payload.currency || 'EUR'),
+    expires_at: normalizeSignatureDate(payload.expires_at),
+    specs_hash: String(specsHash || '')
+  };
+}
+
+function signOfferPayload(payload) {
+  const canonicalPayload = buildOfferSignaturePayload(payload);
+  const baseString = JSON.stringify(canonicalPayload);
+  return crypto
+    .createHmac('sha256', OFFER_SIGNING_SECRET)
+    .update(baseString)
+    .digest('hex');
+}
+
+function verifyOfferSignature(payload, signature) {
+  if (!signature) return false;
+
+  const expected = signOfferPayload(payload);
+
+  try {
+    const a = Buffer.from(String(expected), 'hex');
+    const b = Buffer.from(String(signature), 'hex');
+
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(a, b);
+  } catch (err) {
+    return expected === signature;
+  }
+}
 
 const isOfferSessionExpired = (session) => {
     if (!session || !session.expires_at) return true;
@@ -691,29 +745,38 @@ const getOfferFromSession = async (offer_session_id, offer_id) => {
         return null;
     }
 
-    const offer = session.offers.find(o => String(o.offer_id) === String(offer_id));
+    const offer = session.offers.find(o => String(o.offer_id || o.id) === String(offer_id));
     if (!offer) {
-        console.warn(`[OFFER_RESOLVE_FAILED] offer_not_in_session offer_id=${offer_id} session_id=${offer_session_id} available=${session.offers?.map(o => o.offer_id).join(',')}`);
+        console.warn(`[OFFER_RESOLVE_FAILED] offer_not_in_session offer_id=${offer_id} session_id=${offer_session_id} available=${session.offers?.map(o => o.offer_id || o.id).join(',')}`);
         return null;
     }
 
     // Verify internal integrity of the registry record
-    const signaturePayload = {
-        ...offer,
-        specs: session.normalized_specs,
-        offer_session_id: offer.offer_session_id || session.offer_session_id,
-        expires_at: offer.expires_at || session.expires_at
+    const verificationPayload = {
+      ...offer,
+      offer_session_id: offer.offer_session_id || session.offer_session_id,
+      offer_id: offer.offer_id || offer.id || offer_id,
+      printer_id: offer.printer_id || offer.printerId || offer.print_house_id || offer.printHouseId,
+      total_price: offer.total_price ?? offer.price ?? offer.total,
+      currency: offer.currency || 'EUR',
+      expires_at: offer.expires_at || session.expires_at,
+      specs: offer.specs || session.normalized_specs || session.specs || {},
+      specs_hash: offer.specs_hash || stableHash(offer.specs || session.normalized_specs || session.specs || {})
     };
 
-    if (!verifyOfferSignature(signaturePayload, offer.signature)) {
+    if (!verifyOfferSignature(verificationPayload, offer.signature)) {
         console.error('[OFFER_RESOLVE_FAILED] INVALID_SIGNATURE', {
-            offer_session_id,
-            offer_id,
-            available_offer_ids: session.offers?.map(o => o.offer_id),
-            offer_expires_at: offer.expires_at,
-            session_expires_at: session.expires_at,
-            normalized_offer_expires: normalizeSignatureDate(offer.expires_at),
-            normalized_session_expires: normalizeSignatureDate(session.expires_at)
+          offer_session_id,
+          offer_id,
+          available_offer_ids: session.offers?.map(o => o.offer_id || o.id),
+          canonical_payload: buildOfferSignaturePayload(verificationPayload),
+          received_signature_prefix: String(offer.signature || '').slice(0, 12),
+          expected_signature_prefix: String(signOfferPayload(verificationPayload) || '').slice(0, 12),
+          has_offer_specs: Boolean(offer.specs),
+          has_offer_specs_hash: Boolean(offer.specs_hash),
+          has_session_normalized_specs: Boolean(session.normalized_specs),
+          offer_expires_at: offer.expires_at,
+          session_expires_at: session.expires_at
         });
         return null;
     }
@@ -1167,33 +1230,30 @@ app.post('/api/budget/calculate', [
 
         const offer_session_id = `ofs_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
         const expires_at = new Date(Date.now() + OFFER_SESSION_TTL_MINUTES * 60 * 1000).toISOString();
+        const normalizedSpecs = req.body;
 
         const normalizedOffers = offers.map(o => {
             const offer_id = `offer_${crypto.randomBytes(6).toString('hex')}`;
-            const total_price = Number(o.total_price ?? o.total_cost ?? 0);
-            const currency = o.currency || 'EUR';
-
-            const offerPayload = {
-                offer_id,
-                offer_session_id,
-                printer_id: o.printer || o.print_house || 'BPE_Engine',
-                printer_name: o.print_house || 'BPE Printer',
-                total_price,
-                currency,
-                production_days: o.production_days || 0,
-                delivery_days: o.delivery_days || 0,
-                estimated_delivery_time: o.estimated_delivery_time || '',
-                pricing_breakdown: o.breakdown || {},
-                raw_offer_snapshot: o,
-                expires_at
+            
+            const offerForSigning = {
+              offer_session_id,
+              offer_id,
+              printer_id: o.printer_id || o.printer || o.print_house || 'BPE_Engine',
+              printer_name: o.print_house || 'BPE Printer',
+              total_price: Number(o.total_price ?? o.total_cost ?? o.price ?? o.total ?? 0),
+              currency: o.currency || 'EUR',
+              production_days: o.production_days || 0,
+              delivery_days: o.delivery_days || 0,
+              estimated_delivery_time: o.estimated_delivery_time || '',
+              pricing_breakdown: o.breakdown || {},
+              raw_offer_snapshot: o,
+              expires_at,
+              specs: normalizedSpecs,
+              specs_hash: stableHash(normalizedSpecs)
             };
 
-            const signature = signOfferPayload({ ...offerPayload, specs: req.body });
-
-            return {
-                ...offerPayload,
-                signature
-            };
+            offerForSigning.signature = signOfferPayload(offerForSigning);
+            return offerForSigning;
         });
 
         // Persist session (v5.3 Phase 4)
