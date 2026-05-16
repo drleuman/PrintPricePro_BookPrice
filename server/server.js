@@ -5,7 +5,7 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const crypto = require('crypto');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
@@ -33,6 +33,10 @@ const repositories = require('./repositories');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://localhost:3001,https://budget.printprice.pro,https://printprice.pro')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
 
 // SECRETS
 if (!process.env.SESSION_SECRET || !process.env.SIGNING_SECRET) {
@@ -49,7 +53,11 @@ const CONTROL_PLANE_API_KEY =
     process.env.CONTROL_PLANE_API_KEY ||
     process.env.CONTROL_PLANE_TOKEN ||
     process.env.PPOS_CONTROL_TOKEN ||
-    "ppp_secret_api_key_v1";
+    '';
+
+if (process.env.NODE_ENV === 'production' && !CONTROL_PLANE_API_KEY) {
+    console.error('[CONFIG_ERROR] CONTROL_PLANE_API_KEY / CONTROL_PLANE_TOKEN / PPOS_CONTROL_TOKEN is required in production.');
+}
 
 const IDENTITY_API_URL =
     process.env.CONTROL_PLANE_AUTH_URL ||
@@ -133,7 +141,9 @@ const BANK_TRANSFER_REFERENCE_PREFIX = process.env.BANK_TRANSFER_REFERENCE_PREFI
 
 console.log(`[PAYMENT_CONFIG] enabled=${PAYMENTS_ENABLED} provider=${PAYMENT_PROVIDER}`);
 
-const stripe = require('stripe')(STRIPE_SECRET_KEY);
+const stripe = (PAYMENTS_ENABLED && PAYMENT_PROVIDER === 'stripe' && STRIPE_SECRET_KEY)
+    ? require('stripe')(STRIPE_SECRET_KEY)
+    : null;
 
 // ---- Control Plane Handoff Configuration (v5.3 - Phase 8) ----
 const CONTROL_PLANE_ORDER_HANDOFF_ENABLED = process.env.CONTROL_PLANE_ORDER_HANDOFF_ENABLED === 'true';
@@ -218,11 +228,23 @@ const sessionVault = new Map();
 app.use(helmet());
 app.use(cookieParser(SESSION_SECRET));
 app.use(cors({
-    origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:3001"],
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('CORS_NOT_ALLOWED'));
+    },
     credentials: true
 }));
 
-app.use(express.json({ limit: '1mb' })); // v5.3: Increased limit for rich payloads
+app.use(express.json({
+    limit: '1mb',
+    verify: (req, res, buf) => {
+        if (req.originalUrl === '/api/payments/stripe/webhook') {
+            req.rawBody = buf;
+        }
+    }
+})); // v5.3: Increased limit for rich payloads
 
 // Rate limiting (Phase 9 Hardening)
 const createLimiter = (max, windowMs = RATE_LIMIT_WINDOW_MS) => rateLimit({
@@ -231,7 +253,16 @@ const createLimiter = (max, windowMs = RATE_LIMIT_WINDOW_MS) => rateLimit({
     message: { error: "RATE_LIMITED", message: "Too many requests. Please try again shortly." },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => `${req.ip}_${req.signedCookies['pp_session_id'] || 'anon'}`
+    keyGenerator: (req) => {
+        const sessionId =
+            req.signedCookies?.['pp_session_id'] ||
+            req.headers['x-session-id'] ||
+            req.body?.session_id ||
+            req.query?.session_id ||
+            'anon';
+
+        return `${ipKeyGenerator(req.ip)}_${sessionId}`;
+    }
 });
 
 const apiLimiter = createLimiter(RATE_LIMIT_MAX_REQUESTS);
@@ -679,6 +710,36 @@ const computeSha256 = (filePath) => {
     });
 };
 
+const performHardenedPDFValidation = async (filePath, role) => {
+    if (!fs.existsSync(filePath)) {
+        return { ok: false, error: 'UPLOAD_FILE_MISSING' };
+    }
+
+    const stats = fs.statSync(filePath);
+    if (!stats.size) {
+        return { ok: false, error: 'EMPTY_FILE' };
+    }
+
+    if (!validatePdfSignature(filePath)) {
+        return { ok: false, error: 'INVALID_PDF_SIGNATURE' };
+    }
+
+    const eofMarkerFound = checkPdfEof(filePath);
+    const checksum = await computeSha256(filePath);
+    const warnings = eofMarkerFound ? [] : ['PDF_EOF_MARKER_NOT_FOUND'];
+
+    return {
+        ok: true,
+        role,
+        warnings,
+        forensics: {
+            checksum,
+            pdf_signature_valid: true,
+            eof_marker_found: eofMarkerFound
+        }
+    };
+};
+
 // 🚀 PRODUCTION FILES: Upload Endpoint (v5.3 - Phase 3)
 app.post('/api/production-files/upload', async (req, res) => {
     upload.single('file')(req, res, async (err) => {
@@ -703,6 +764,7 @@ app.post('/api/production-files/upload', async (req, res) => {
         }
 
         const { role, cart_id, session_id, order_intent_id, user_id } = req.body;
+        const identity = resolveRequestIdentity(req);
         if (!['INTERIOR_PDF', 'COVER_PDF'].includes(role)) {
             fs.unlinkSync(filePath);
             return res.status(400).json({ error: "INVALID_ROLE", message: "Invalid role. Must be INTERIOR_PDF or COVER_PDF." });
@@ -776,8 +838,8 @@ app.post('/api/production-files/upload', async (req, res) => {
                     entity_type: 'PRODUCTION_FILE',
                     entity_id: record.file_id,
                     event_type: 'UPLOAD_SUCCESS',
-                    actor_id: identity.user_id,
-                    session_id: identity.session_id,
+                    actor_id: identity.user?.id || null,
+                    session_id: identity.sessionId || session_id || null,
                     ip: req.ip,
                     payload: { role: record.role, filename: record.filename }
                 });
@@ -837,7 +899,7 @@ app.get('/api/production-files/:fileId', async (req, res) => {
         return res.status(404).json({ ok: false, error: "PRODUCTION_FILE_NOT_FOUND" });
     }
 
-    if (!assertProductionFileAccess(req, file)) {
+    if (!await assertProductionFileAccess(req, file)) {
         return res.status(403).json({ ok: false, error: "FORBIDDEN_FILE_ACCESS" });
     }
 
@@ -1106,7 +1168,7 @@ app.post('/api/cart/add', async (req, res) => {
             });
         }
 
-        const resolvedOffer = getOfferFromSession(offer_session_id, offer_id);
+        const resolvedOffer = await getOfferFromSession(offer_session_id, offer_id);
         if (!resolvedOffer) {
             return res.status(400).json({ error: "INVALID_OFFER", message: "The selected offer is invalid or has been tampered with." });
         }
@@ -1276,7 +1338,7 @@ app.post('/api/cart/checkout', async (req, res) => {
                 });
             }
 
-            const resolvedOffer = getOfferFromSession(offer_session_id, offer_id);
+            const resolvedOffer = await getOfferFromSession(offer_session_id, offer_id);
             if (!resolvedOffer) {
                 console.error(`[CHECKOUT_OFFER_REJECTED] Offer resolution failed or signature invalid. ofs=${offer_session_id} off=${offer_id}`);
                 return res.status(400).json({ error: "OFFER_VERIFICATION_FAILED", message: "One or more offers in your cart could not be verified." });
@@ -1377,6 +1439,7 @@ app.post('/api/cart/checkout', async (req, res) => {
 app.post('/api/order-intents', async (req, res) => {
     console.log(`[ORDER_INTENT_CREATE_REQUEST]`);
     const sessionId = getOrCreateSessionId(req, res);
+    const identity = resolveRequestIdentity(req);
     const {
         offer_session_id,
         offer_id,
@@ -1476,8 +1539,8 @@ app.post('/api/order-intents', async (req, res) => {
         entity_type: 'ORDER_INTENT',
         entity_id: order_intent_id,
         event_type: 'INTENT_CREATED',
-        actor_id: identity.user_id,
-        session_id: identity.session_id,
+        actor_id: identity.user?.id || null,
+        session_id: identity.sessionId || null,
         ip: req.ip,
         payload: { public_ref, offer_id }
     });
@@ -1513,6 +1576,7 @@ app.get('/api/order-intents/:id', async (req, res) => {
 
 app.get('/api/order-intents', async (req, res) => {
     const identity = resolveRequestIdentity(req);
+    const { session_id, user_id } = req.query;
     const targetSessionId = session_id || identity.sessionId;
 
     let intents = [];
@@ -2028,7 +2092,8 @@ app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' 
 
     try {
         if (!STRIPE_WEBHOOK_SECRET) throw new Error("STRIPE_WEBHOOK_SECRET_MISSING");
-        event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+        if (!stripe) throw new Error("STRIPE_NOT_CONFIGURED");
+        event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error(`[STRIPE_WEBHOOK_REJECTED] error=${err.message} ip=${req.ip}`);
         return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -3458,7 +3523,7 @@ app.post('/api/order-intents/:id/files/:role/replace', upload.single('file'), as
             entity_type: 'ORDER_INTENT',
             entity_id: orderIntentId,
             event_type: 'PRODUCTION_FILE_REPLACED',
-            actor_id: identity.user_id,
+            actor_id: identity.user?.id || null,
             payload: { role, old_file_id: oldFileId, new_file_id: newFileId }
         });
 
@@ -3490,7 +3555,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
                 customer_message: customer_message || "Please reupload your production files.",
                 operator_notes,
                 source: "OPERATOR",
-                actor_id: identity.user_id
+                actor_id: identity.user?.id || null
             });
         } else if (action === 'MARK_RESOLVED') {
             // Safety: cannot resolve if preflight is still failed
@@ -3500,7 +3565,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
             await resolveOrderIntentException(intent, {
                 type: "MANUAL_OVERRIDE",
                 notes: operator_notes,
-                resolved_by: identity.user_id
+                resolved_by: identity.user?.id || null
             });
         } else if (action === 'SEND_TO_REFUND_REVIEW') {
             await openOrderIntentException(intent, {
@@ -3510,7 +3575,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
                 customer_message: "Our team is reviewing payment resolution.",
                 operator_notes,
                 source: "OPERATOR",
-                actor_id: identity.user_id
+                actor_id: identity.user?.id || null
             });
         } else if (action === 'CANCEL_ORDER') {
             if (intent.status === 'SHIPPED') {
@@ -3524,7 +3589,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
             await resolveOrderIntentException(intent, {
                 type: "CANCELLED",
                 notes: operator_notes,
-                resolved_by: identity.user_id
+                resolved_by: identity.user?.id || null
             });
         } else if (action === 'REQUEST_ALTERNATE_PRINTER') {
             await openOrderIntentException(intent, {
@@ -3534,7 +3599,7 @@ app.post('/api/order-intents/:id/exception/review', adminOnly, async (req, res) 
                 customer_message: "Our production team is reviewing your order.",
                 operator_notes,
                 source: "OPERATOR",
-                actor_id: identity.user_id
+                actor_id: identity.user?.id || null
             });
         } else {
             return res.status(400).json({ ok: false, error: "INVALID_ACTION" });
@@ -3640,12 +3705,7 @@ app.get('/api/orders/ref/:publicRef/tracking', async (req, res) => {
  * GET /api/admin/health/notifications
  * Provides forensic telemetry for the notification subsystem.
  */
-app.get('/api/admin/health/notifications', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${ADMIN_TOKEN}`) {
-        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-    }
-
+app.get('/api/admin/health/notifications', adminOnly, async (req, res) => {
     try {
         const stats = await repositories.notifications.health();
         res.json({
