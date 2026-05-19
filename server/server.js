@@ -51,7 +51,10 @@ const SIGNING_SECRET = process.env.SIGNING_SECRET;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // CONTROL PLANE / BPE CONFIG
-const CONTROL_PLANE_BASE_URL = process.env.CONTROL_PLANE_URL || "http://127.0.0.1:8081";
+const CONTROL_PLANE_BASE_URL = 
+    process.env.CONTROL_PLANE_BASE_URL || 
+    process.env.CONTROL_PLANE_URL || 
+    "http://127.0.0.1:8081";
 const CONTROL_PLANE_API_KEY =
     process.env.CONTROL_PLANE_API_KEY ||
     process.env.CONTROL_PLANE_TOKEN ||
@@ -1466,6 +1469,119 @@ app.post('/api/budget/calculate', [
             upstream_status: err.response?.status || null,
             upstream_error: err.response?.data || null
         });
+    }
+});
+
+// 🌐 MARKETPLACE ORDER INTAKE PROXY (v5.3 Phase 36.2)
+app.post('/api/orders/create-from-offer', async (req, res) => {
+    const {
+        pricingSessionId,
+        selectedOfferId,
+        sessionId,
+        customerId,
+        tenantId,
+        customer,
+        bookSpec,
+        metadata,
+        idempotencyKey
+    } = req.body;
+
+    const actualSessionId = sessionId || req.signedCookies['pp_session_id'];
+
+    if (!actualSessionId && !customerId) {
+        return res.status(400).json({ error: "MISSING_IDENTITY", message: "sessionId or customerId is required." });
+    }
+    if (!pricingSessionId || !selectedOfferId) {
+        return res.status(400).json({ error: "MISSING_OFFER_IDS", message: "pricingSessionId and selectedOfferId are required." });
+    }
+
+    if (!process.env.PPOS_MARKETPLACE_INTAKE_TOKEN) {
+        return res.status(500).json({ error: "MARKETPLACE_INTAKE_TOKEN_MISSING", message: "PPOS_MARKETPLACE_INTAKE_TOKEN is not configured." });
+    }
+
+    // 1. Resolve Session and Offer Server-Side
+    const session = await repositories.offerSessions.getById(pricingSessionId);
+    if (!session) {
+        return res.status(400).json({ error: "OFFER_SESSION_NOT_FOUND", message: "The pricing session was not found." });
+    }
+
+    const resolvedOffer = await getOfferFromSession(pricingSessionId, selectedOfferId);
+    if (!resolvedOffer) {
+        return res.status(400).json({ error: "OFFER_VERIFICATION_FAILED", message: "The selected offer is invalid or could not be verified." });
+    }
+
+    // 2. Extract Trusted Data
+    const resolvedPrinthouseId = resolvedOffer.print_house_id || resolvedOffer.printer_id || resolvedOffer.printerId;
+    const resolvedEstimatedPrice = Number(resolvedOffer.total_price || resolvedOffer.total_cost || resolvedOffer.price || 0);
+
+    if (!Number.isFinite(resolvedEstimatedPrice) || resolvedEstimatedPrice <= 0) {
+        return res.status(400).json({ error: "INVALID_RESOLVED_PRICE", message: "The verified offer has an invalid or zero price." });
+    }
+
+    // 3. Build Trusted DTO
+    const dto = {
+        pricingSessionId: pricingSessionId,
+        selectedOfferId: selectedOfferId,
+        sessionId: actualSessionId,
+        customerId: customerId,
+        tenantId: tenantId,
+        printhouseId: resolvedPrinthouseId,
+        currency: resolvedOffer.currency || 'EUR',
+        estimatedPrice: resolvedEstimatedPrice,
+        customer: customer || (customerId ? { name: "Logged In", email: null } : { name: "Anonymous", email: null }),
+        bookSpec: session.normalized_specs || session.input_specs || {},
+        selectedOffer: resolvedOffer.raw_offer_snapshot || resolvedOffer,
+        metadata: {
+            ...metadata,
+            source: "bpe-marketplace-app",
+            phase: "36.2",
+            idempotencyKey,
+            offerVerified: true,
+            offerSessionExpiresAt: session.expires_at,
+            clientBookSpec: bookSpec || null
+        }
+    };
+
+    console.log(`[CONTROL_PLANE_INTAKE_REQ] pricingSessionId=${dto.pricingSessionId} selectedOfferId=${dto.selectedOfferId} hasSessionId=${!!dto.sessionId} hasCustomerId=${!!dto.customerId} resolvedPrinthouseId=${dto.printhouseId} resolvedEstimatedPrice=${dto.estimatedPrice}`);
+
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-Marketplace-Token': process.env.PPOS_MARKETPLACE_INTAKE_TOKEN
+        };
+        if (idempotencyKey) {
+            headers['X-Idempotency-Key'] = idempotencyKey;
+        }
+
+        const cpResponse = await axios.post(`${CONTROL_PLANE_BASE_URL}/api/marketplace/orders`, dto, {
+            headers,
+            timeout: 15000
+        });
+
+        console.log(`[CONTROL_PLANE_INTAKE_RES] statusCode=${cpResponse.status} orderId=${cpResponse.data?.orderId}`);
+        res.status(200).json(cpResponse.data);
+
+    } catch (err) {
+        if (err.response) {
+            const status = err.response.status;
+            console.error(`[CONTROL_PLANE_INTAKE_ERROR] statusCode=${status}`);
+            
+            if (status === 401 || status === 403) {
+                return res.status(502).json({ error: "CONTROL_PLANE_AUTH_FAILED", message: "Failed to authenticate with ControlPlane." });
+            }
+            if (status >= 400 && status < 500) {
+                return res.status(status).json({
+                    ok: false,
+                    error: "CONTROL_PLANE_REJECTED_ORDER",
+                    statusCode: status,
+                    details: err.response.data
+                });
+            }
+        } else {
+            console.error(`[CONTROL_PLANE_INTAKE_ERROR] network/timeout: ${err.message}`);
+        }
+        
+        return res.status(502).json({ error: "CONTROL_PLANE_UNAVAILABLE", message: "ControlPlane service is unavailable." });
     }
 });
 

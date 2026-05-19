@@ -547,3 +547,31 @@ export interface OrderIntent {
   updated_at: string;
   is_intent?: boolean; // UI helper
 }
+
+export interface ControlPlaneOrderResponse {
+  ok: boolean;
+  orderId: string;
+  status: string;
+  requiredFiles?: string[];
+  readiness?: {
+    ready?: boolean;
+    blockers?: string[];
+    [key: string]: any;
+  };
+}
+
+export interface CreateControlPlaneOrderRequest {
+  pricingSessionId?: string;
+  selectedOfferId?: string;
+  sessionId?: string;
+  customerId?: string;
+  tenantId?: string;
+  printhouseId?: string;
+  currency?: string;
+  estimatedPrice?: number;
+  customer?: any;
+  bookSpec: any;
+  selectedOffer: any;
+  metadata?: any;
+  idempotencyKey?: string;
+}

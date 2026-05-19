@@ -270,6 +270,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [controlPlaneOrderId, setControlPlaneOrderId] = useState<string | null>(null);
+  const [controlPlaneOrderStatus, setControlPlaneOrderStatus] = useState<any | null>(null);
+  const [orderCreationError, setOrderCreationError] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
@@ -809,6 +812,46 @@ const App: React.FC = () => {
           throw new Error('Missing offer session or offer id. Please recalculate.');
       }
 
+      const idempotencyKey = `${sessionId.current}:${offer_id}:${offer_session_id}`;
+
+      // 1. Create ControlPlane Order
+      const cpResponse = await fetch('/api/orders/create-from-offer', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pricingSessionId: offer_session_id,
+          selectedOfferId: offer_id,
+          sessionId: sessionId.current,
+          customerId: user?.user_id || undefined,
+          customer: user ? { name: user.name, email: user.email } : { name: "Anonymous", email: null },
+          bookSpec: specs,
+          idempotencyKey,
+          metadata: {
+            source: "bpe-marketplace-app",
+            uiStep: currentStep,
+            cartFlow: true
+          }
+        }),
+      });
+
+      let cpData: any = {};
+      try {
+        cpData = await cpResponse.json();
+      } catch {
+        // ignore
+      }
+
+      if (!cpResponse.ok || !cpData.ok) {
+        setOrderCreationError(cpData.error || cpData.message || 'Failed to create production order');
+        throw new Error(cpData.error || cpData.message || 'We could not create your production order yet. Please try again.');
+      }
+
+      setControlPlaneOrderId(cpData.orderId);
+      setControlPlaneOrderStatus(cpData.status);
+
+      // 2. Add to local cart for UI state transition
+
       const response = await fetch('/api/cart/add', {
         method: 'POST',
         credentials: 'include',
@@ -856,6 +899,9 @@ const App: React.FC = () => {
           source: 'PRINTPRICE_APP',
           bpe_endpoint: '/api/marketplace/offers',
           payment_status: 'PENDING',
+          controlPlaneOrderId: cpData.orderId,
+          controlPlaneOrderStatus: cpData.status,
+          idempotencyKey,
         },
       }]);
 
@@ -874,7 +920,7 @@ const App: React.FC = () => {
       
       addToast({
         variant: 'error',
-        title: isExpired ? 'Offer Expired' : 'Cart Error',
+        title: isExpired ? 'Offer Expired' : 'Order Error',
         body: msg,
       });
       if (isExpired) {
@@ -1223,6 +1269,7 @@ const App: React.FC = () => {
                   onFileRemove={handleProductionFileRemove}
                   onContinue={handleCheckout}
                   disabled={creatingOrder}
+                  orderId={controlPlaneOrderId || undefined}
                 />
               </div>
             )}

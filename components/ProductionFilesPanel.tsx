@@ -9,6 +9,7 @@ interface ProductionFilesPanelProps {
   onFileRemove: (kind: ProductionFileKind) => void;
   onContinue: () => void;
   disabled?: boolean;
+  orderId?: string;
 }
 
 const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
@@ -19,6 +20,7 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
   onFileRemove,
   onContinue,
   disabled = false,
+  orderId,
 }) => {
   // Local state to track active tab per slot
   const [activeTab, setActiveTab] = useState<Record<ProductionFileKind, ProductionFileSourceType>>({
@@ -264,7 +266,7 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
       <div className="flex flex-col md:flex-row justify-between items-start gap-8 mb-8 relative z-10">
         <div>
           <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-2 uppercase">
-            Step: Production Intake
+            Step: Production Intake {orderId ? `• [${orderId}]` : ''}
           </h2>
           <p className="text-xl font-display font-black text-corporate-text uppercase tracking-tighter">
             Files or External Links
