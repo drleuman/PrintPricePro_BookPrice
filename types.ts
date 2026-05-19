@@ -205,6 +205,16 @@ export interface ProductionFileMetadata {
   validated_at?: string;
   created_at?: string;
   error?: string;
+  controlPlaneOrderId?: string;
+  controlPlaneFileId?: string;
+  controlPlaneRegistration?: {
+    ok: boolean;
+    orderId?: string;
+    role?: string;
+    response?: any;
+    error?: string;
+    statusCode?: number;
+  };
 }
 
 export interface ProductionFileDraft {
@@ -232,6 +242,16 @@ export interface ProductionFileDraft {
   storage_url?: string;
   created_at?: string;
   error?: string;
+  controlPlaneOrderId?: string;
+  controlPlaneFileId?: string;
+  controlPlaneRegistration?: {
+    ok: boolean;
+    orderId?: string;
+    role?: string;
+    response?: any;
+    error?: string;
+    statusCode?: number;
+  };
 }
 
 export interface ProductionFilesState {
@@ -324,6 +344,9 @@ export interface CartItem {
     ui_context?: any;
     production_files?: ProductionFilesOrderMetadata;
     invoice_payment?: InvoicePaymentState;
+    controlPlaneOrderId?: string;
+    controlPlaneOrderStatus?: string;
+    idempotencyKey?: string;
   };
 }
 

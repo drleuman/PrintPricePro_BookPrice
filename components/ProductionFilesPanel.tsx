@@ -112,6 +112,16 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
                 {draft.error || 'INVALID_SOURCE'}
               </span>
             )}
+            {draft.controlPlaneRegistration && draft.controlPlaneRegistration.ok && (
+              <span className="bg-green-500/10 text-green-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-green-500/20 tracking-tighter uppercase">
+                REGISTERED IN CONTROLPLANE
+              </span>
+            )}
+            {draft.controlPlaneRegistration && !draft.controlPlaneRegistration.ok && (
+              <span className="bg-red-500/10 text-red-500 text-[8px] font-technical font-black px-1.5 py-0.5 border border-red-500/20 tracking-tighter uppercase">
+                LOCAL UPLOAD ONLY / REGISTRATION WARNING
+              </span>
+            )}
           </div>
         </div>
 
@@ -271,6 +281,11 @@ const ProductionFilesPanel: React.FC<ProductionFilesPanelProps> = ({
           <p className="text-xl font-display font-black text-corporate-text uppercase tracking-tighter">
             Files or External Links
           </p>
+          {orderId && (
+            <p className="text-[10px] font-technical text-corporate-accent uppercase mt-1">
+              ControlPlane Order: <span className="text-corporate-text font-black select-all">{orderId}</span>
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className="bg-corporate-accent/20 text-corporate-accent text-[10px] font-technical font-black px-3 py-1 border border-corporate-accent/30 tracking-widest uppercase">

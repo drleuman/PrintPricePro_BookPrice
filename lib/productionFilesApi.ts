@@ -107,7 +107,13 @@ export async function validateProductionFileUrl(
 export async function uploadProductionFile(
   file: File,
   kind: ProductionFileKind,
-  context?: { cart_id?: string; session_id?: string; order_intent_id?: string; user_id?: string }
+  context?: {
+    cart_id?: string;
+    session_id?: string;
+    order_intent_id?: string;
+    user_id?: string;
+    controlPlaneOrderId?: string;
+  }
 ): Promise<ProductionFileMetadata> {
   const formData = new FormData();
   formData.append('file', file);
@@ -117,6 +123,7 @@ export async function uploadProductionFile(
   if (context?.session_id) formData.append('session_id', context.session_id);
   if (context?.order_intent_id) formData.append('order_intent_id', context.order_intent_id);
   if (context?.user_id) formData.append('user_id', context.user_id);
+  if (context?.controlPlaneOrderId) formData.append('control_plane_order_id', context.controlPlaneOrderId);
 
   const response = await fetch('/api/production-files/upload', {
     method: 'POST',
@@ -141,7 +148,10 @@ export async function uploadProductionFile(
     checksum: data.checksum,
     validation: data.validation,
     storage_url: data.storage_url,
-    created_at: data.created_at
+    created_at: data.created_at,
+    controlPlaneRegistration: data.controlPlaneRegistration,
+    controlPlaneFileId: data.controlPlaneFileId,
+    controlPlaneOrderId: data.controlPlaneOrderId,
   };
 }
 

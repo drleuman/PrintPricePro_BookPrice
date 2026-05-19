@@ -995,6 +995,89 @@ const buildControlPlaneHandoffPayload = (orderIntent) => {
     };
 };
 
+/**
+ * Registers an uploaded production file with the ControlPlane marketplace order.
+ * (v5.3 - Phase 36.3 Hardening)
+ */
+async function registerProductionFileWithControlPlane(controlPlaneOrderId, record) {
+    if (!controlPlaneOrderId) {
+        return null;
+    }
+
+    const mappedRole = record.role === 'COVER_SPINE_BACK_PDF' ? 'COVER_PDF' : record.role;
+
+    if (!process.env.PPOS_MARKETPLACE_INTAKE_TOKEN) {
+        console.warn(`[CONTROL_PLANE_FILE_REGISTER_WARN] PPOS_MARKETPLACE_INTAKE_TOKEN is missing`);
+        return {
+            ok: false,
+            orderId: controlPlaneOrderId,
+            role: mappedRole,
+            error: "PPOS_MARKETPLACE_INTAKE_TOKEN is missing",
+            statusCode: null
+        };
+    }
+
+    const registerUrl = `${CONTROL_PLANE_BASE_URL}/api/marketplace/orders/${controlPlaneOrderId}/files/register`;
+    const registerPayload = {
+        role: mappedRole,
+        originalName: record.filename,
+        mimeType: record.mime_type,
+        sizeBytes: record.size_bytes,
+        checksumSha256: record.checksum?.value,
+        storagePath: `/api/production-files/download/${record.file_id}`,
+        metadata: {
+            source: "bpe-marketplace-app",
+            phase: "36.3",
+            localFileId: record.file_id,
+            storageProvider: record.storage?.provider,
+            storageKey: record.storage?.key,
+            uploadWarnings: record.validation?.warnings || [],
+            sessionId: record.associations?.session_id || null,
+            cartId: record.associations?.cart_id || null
+        }
+    };
+
+    try {
+        console.log(`[CONTROL_PLANE_FILE_REGISTER_START] URL=${registerUrl} role=${mappedRole}`);
+        const cpRes = await axios.post(registerUrl, registerPayload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Marketplace-Token': process.env.PPOS_MARKETPLACE_INTAKE_TOKEN
+            },
+            timeout: 10000
+        });
+
+        if (cpRes.status >= 200 && cpRes.status < 300) {
+            const registeredFileId =
+                cpRes.data?.fileId ||
+                cpRes.data?.file?.fileId ||
+                cpRes.data?.file?.file_id ||
+                cpRes.data?.id ||
+                null;
+
+            console.log(`[CONTROL_PLANE_FILE_REGISTER_SUCCESS] cpFileId=${registeredFileId}`);
+            return {
+                ok: true,
+                orderId: controlPlaneOrderId,
+                role: mappedRole,
+                fileId: registeredFileId,
+                response: cpRes.data
+            };
+        } else {
+            throw new Error(`Non-2xx status: ${cpRes.status}`);
+        }
+    } catch (cpErr) {
+        console.error(`[CONTROL_PLANE_FILE_REGISTER_ERROR] orderId=${controlPlaneOrderId}: ${cpErr.message}`);
+        return {
+            ok: false,
+            orderId: controlPlaneOrderId,
+            role: mappedRole,
+            error: cpErr.message,
+            statusCode: cpErr.response?.status || null
+        };
+    }
+}
+
 // 🚀 PRODUCTION FILES: Upload Endpoint (v5.3 - Phase 3)
 app.post('/api/production-files/upload', async (req, res) => {
     upload.single('file')(req, res, async (err) => {
@@ -1002,8 +1085,14 @@ app.post('/api/production-files/upload', async (req, res) => {
             console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
                 reason: err.code,
                 message: err.message,
-                body: req.body,
-                body_keys: Object.keys(req.body || {})
+                body_keys: Object.keys(req.body || {}),
+                has_file: Boolean(req.file),
+                file: req.file ? {
+                    fieldname: req.file.fieldname,
+                    originalname: req.file.originalname,
+                    mimetype: req.file.mimetype,
+                    size: req.file.size
+                } : null
             });
 
             if (err.code === 'LIMIT_FILE_SIZE') {
@@ -1023,8 +1112,14 @@ app.post('/api/production-files/upload', async (req, res) => {
             console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
                 reason: "FILE_FILTER_REJECTED",
                 message: err.message,
-                body: req.body,
-                body_keys: Object.keys(req.body || {})
+                body_keys: Object.keys(req.body || {}),
+                has_file: Boolean(req.file),
+                file: req.file ? {
+                    fieldname: req.file.fieldname,
+                    originalname: req.file.originalname,
+                    mimetype: req.file.mimetype,
+                    size: req.file.size
+                } : null
             });
 
             return res.status(400).json({
@@ -1034,17 +1129,23 @@ app.post('/api/production-files/upload', async (req, res) => {
             });
         }
 
-        console.error("[PRODUCTION_FILE_UPLOAD_DEBUG]", {
+        const hasControlPlaneOrderId = Boolean(
+            req.body?.control_plane_order_id || 
+            req.body?.marketplace_order_id || 
+            req.body?.controlPlaneOrderId || 
+            req.body?.marketplaceOrderId
+        );
+
+        console.log("[PRODUCTION_FILE_UPLOAD_DEBUG]", {
             has_file: Boolean(req.file),
             file: req.file ? {
                 fieldname: req.file.fieldname,
                 originalname: req.file.originalname,
                 mimetype: req.file.mimetype,
-                size: req.file.size,
-                path: req.file.path
+                size: req.file.size
             } : null,
-            body: req.body,
-            body_keys: Object.keys(req.body || {})
+            body_keys: Object.keys(req.body || {}),
+            hasControlPlaneOrderId
         });
 
         if (!req.file) {
@@ -1059,12 +1160,16 @@ app.post('/api/production-files/upload', async (req, res) => {
         }
 
         const { role, cart_id, session_id, order_intent_id, user_id } = req.body;
+        const controlPlaneOrderId = req.body.control_plane_order_id || 
+                                    req.body.marketplace_order_id || 
+                                    req.body.controlPlaneOrderId || 
+                                    req.body.marketplaceOrderId || 
+                                    null;
         const identity = resolveRequestIdentity(req);
-        if (!['INTERIOR_PDF', 'COVER_PDF'].includes(role)) {
+        if (!['INTERIOR_PDF', 'COVER_PDF', 'COVER_SPINE_BACK_PDF'].includes(role)) {
             console.error("[PRODUCTION_FILE_UPLOAD_REJECTED]", {
                 reason: "INVALID_ROLE",
                 received_role: role,
-                body: req.body,
                 body_keys: Object.keys(req.body || {}),
                 has_file: Boolean(req.file),
                 file: req.file ? {
@@ -1079,7 +1184,7 @@ app.post('/api/production-files/upload', async (req, res) => {
             return res.status(400).json({
                 error: "INVALID_ROLE",
                 reason: "INVALID_ROLE",
-                message: "Invalid role. Must be INTERIOR_PDF or COVER_PDF."
+                message: "Invalid role. Must be INTERIOR_PDF, COVER_PDF, or COVER_SPINE_BACK_PDF."
             });
         }
 
@@ -1141,11 +1246,55 @@ app.post('/api/production-files/upload', async (req, res) => {
                     order_ref: null,
                     user_id: user_id || null
                 },
-                created_at: createdAt
+                created_at: createdAt,
+                controlPlaneOrderId: controlPlaneOrderId || null,
+                controlPlaneFileId: null,
+                controlPlaneRegistration: null,
+                metadata: {
+                    controlPlaneOrderId: controlPlaneOrderId || null,
+                    controlPlaneFileId: null,
+                    controlPlaneRegistration: null
+                }
             };
+
+            let registrationOk = false;
+
+            if (controlPlaneOrderId) {
+                const regResult = await registerProductionFileWithControlPlane(controlPlaneOrderId, record);
+                if (regResult) {
+                    registrationOk = regResult.ok;
+                    
+                    if (registrationOk) {
+                        record.controlPlaneFileId = regResult.fileId;
+                    } else {
+                        warnings.push("CONTROL_PLANE_FILE_REGISTER_FAILED");
+                    }
+
+                    const cpRegistrationObj = registrationOk ? {
+                        ok: true,
+                        orderId: controlPlaneOrderId,
+                        role: regResult.role,
+                        response: regResult.response
+                    } : regResult;
+
+                    record.controlPlaneRegistration = cpRegistrationObj;
+                    record.metadata = {
+                        ...record.metadata,
+                        controlPlaneOrderId,
+                        controlPlaneFileId: record.controlPlaneFileId,
+                        controlPlaneRegistration: cpRegistrationObj
+                    };
+                }
+            }
 
             try {
                 await repositories.productionFiles.create(record);
+
+                if (controlPlaneOrderId && !registrationOk) {
+                    await repositories.productionFiles.updateStatus(file_id, record.status, {
+                        validation: record.validation
+                    });
+                }
 
                 await repositories.auditEvents.append({
                     entity_type: 'PRODUCTION_FILE',
@@ -1200,7 +1349,10 @@ app.get('/api/production-files', async (req, res) => {
     const sanitizedFiles = allowedFiles.map(f => ({
         ...f,
         storage: { provider: f.storage.provider, key: f.storage.key },
-        storage_url: `/api/production-files/download/${f.file_id}`
+        storage_url: `/api/production-files/download/${f.file_id}`,
+        controlPlaneOrderId: f.controlPlaneOrderId || f.metadata?.controlPlaneOrderId || null,
+        controlPlaneFileId: f.controlPlaneFileId || f.metadata?.controlPlaneFileId || null,
+        controlPlaneRegistration: f.controlPlaneRegistration || f.metadata?.controlPlaneRegistration || null
     }));
 
     res.json({ ok: true, files: sanitizedFiles });
@@ -1221,8 +1373,42 @@ app.get('/api/production-files/:fileId', async (req, res) => {
         file: {
             ...file,
             storage: { provider: file.storage.provider, key: file.storage.key },
-            storage_url: `/api/production-files/download/${file.file_id}`
+            storage_url: `/api/production-files/download/${file.file_id}`,
+            controlPlaneOrderId: file.controlPlaneOrderId || file.metadata?.controlPlaneOrderId || null,
+            controlPlaneFileId: file.controlPlaneFileId || file.metadata?.controlPlaneFileId || null,
+            controlPlaneRegistration: file.controlPlaneRegistration || file.metadata?.controlPlaneRegistration || null
         }
+    });
+});
+
+app.get('/api/production-files/metadata/:fileId', async (req, res) => {
+    const file = await repositories.productionFiles.getById(req.params.fileId);
+    if (!file) {
+        return res.status(404).json({ ok: false, error: "PRODUCTION_FILE_NOT_FOUND" });
+    }
+
+    if (!await assertProductionFileAccess(req, file)) {
+        return res.status(403).json({ ok: false, error: "FORBIDDEN_FILE_ACCESS" });
+    }
+
+    res.json({
+        ok: true,
+        file_id: file.file_id,
+        role: file.role,
+        filename: file.filename,
+        safe_filename: file.safe_filename,
+        size_bytes: file.size_bytes,
+        mime_type: file.mime_type,
+        status: file.status,
+        source_type: file.source_type,
+        checksum: file.checksum,
+        validation: file.validation,
+        associations: file.associations,
+        created_at: file.created_at,
+        storage_url: `/api/production-files/download/${file.file_id}`,
+        controlPlaneOrderId: file.controlPlaneOrderId || file.metadata?.controlPlaneOrderId || null,
+        controlPlaneFileId: file.controlPlaneFileId || file.metadata?.controlPlaneFileId || null,
+        controlPlaneRegistration: file.controlPlaneRegistration || file.metadata?.controlPlaneRegistration || null
     });
 });
 

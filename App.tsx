@@ -312,6 +312,11 @@ const App: React.FC = () => {
             interior_pdf: interior ? { ...prev.interior_pdf, ...interior, status: interior.status } : prev.interior_pdf,
             cover_spine_back_pdf: cover ? { ...prev.cover_spine_back_pdf, ...cover, status: cover.status } : prev.cover_spine_back_pdf,
           }));
+
+          const restoredCpOrderId = interior?.controlPlaneOrderId || cover?.controlPlaneOrderId;
+          if (restoredCpOrderId) {
+            setControlPlaneOrderId(restoredCpOrderId);
+          }
           
           if (interior || cover) {
             addToast({
@@ -657,22 +662,34 @@ const App: React.FC = () => {
         const cartItem = cart[0];
         const uploadedMetadata = await uploadProductionFile(file, kind, { 
           session_id: cartItem?.offer_session_id || sessionId.current,
-          cart_id: cartItem?.id
+          cart_id: cartItem?.id,
+          controlPlaneOrderId: controlPlaneOrderId || cartItem?.metadata?.controlPlaneOrderId
         });
         
         setProductionFiles(prev => ({
           ...prev,
           [kind === 'INTERIOR_PDF' ? 'interior_pdf' : 'cover_spine_back_pdf']: {
             ...uploadedMetadata,
+            controlPlaneRegistration: uploadedMetadata.controlPlaneRegistration,
+            controlPlaneFileId: uploadedMetadata.controlPlaneFileId,
+            controlPlaneOrderId: uploadedMetadata.controlPlaneOrderId,
             status: 'UPLOADED' // Force UPLOADED status on success
           }
         }));
 
-        addToast({
-          variant: 'success',
-          title: 'Upload complete',
-          body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} PDF uploaded successfully.`,
-        });
+        if (uploadedMetadata.controlPlaneRegistration && uploadedMetadata.controlPlaneRegistration.ok === false) {
+          addToast({
+            variant: 'info',
+            title: 'Registration Warning',
+            body: 'File uploaded, but ControlPlane registration failed. Please retry or contact support.',
+          });
+        } else {
+          addToast({
+            variant: 'success',
+            title: 'Upload complete',
+            body: `${kind === 'INTERIOR_PDF' ? 'Interior' : 'Cover'} PDF uploaded successfully.`,
+          });
+        }
       } catch (uploadErr: any) {
         console.error('Upload failed:', uploadErr);
         setProductionFiles(prev => ({
@@ -692,7 +709,7 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('File validation error:', err);
     }
-  }, [addToast, cart]);
+  }, [addToast, cart, controlPlaneOrderId]);
 
   const handleProductionFileUrlSelect = useCallback(async (kind: ProductionFileKind, url: string) => {
     try {
