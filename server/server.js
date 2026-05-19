@@ -1274,6 +1274,7 @@ app.post('/api/production-files/upload', async (req, res) => {
                         ok: true,
                         orderId: controlPlaneOrderId,
                         role: regResult.role,
+                        fileId: regResult.fileId,
                         response: regResult.response
                     } : regResult;
 
