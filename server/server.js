@@ -1400,6 +1400,79 @@ function controlPlaneAuthHeaders(extra = {}) {
     };
 }
 
+// EXTRACT REQUIREDFILES UTILITY FROM VARIOUS SHAPES
+function extractRequiredFiles(payload) {
+    if (!payload || typeof payload !== 'object') return [];
+    
+    const getArr = (obj) => {
+        if (!obj || typeof obj !== 'object') return null;
+        if (Array.isArray(obj.requiredFiles)) return obj.requiredFiles;
+        if (Array.isArray(obj.required_files)) return obj.required_files;
+        return null;
+    };
+
+    // Check direct
+    let arr = getArr(payload);
+    if (arr) return arr;
+
+    // Check action / customerAction
+    arr = getArr(payload.action) || getArr(payload.customerAction) || getArr(payload.customer_action);
+    if (arr) return arr;
+
+    // Check data
+    if (payload.data && typeof payload.data === 'object') {
+        arr = getArr(payload.data);
+        if (arr) return arr;
+
+        arr = getArr(payload.data.action) || getArr(payload.data.customerAction) || getArr(payload.data.customer_action);
+        if (arr) return arr;
+    }
+
+    return [];
+}
+
+// NORMALIZE CUSTOMER ACTION RESPONSE UTILITY
+function normalizeCustomerActionResponse(payload) {
+    if (!payload || typeof payload !== 'object') return {};
+
+    const requiredFiles = extractRequiredFiles(payload);
+
+    const findField = (keyName) => {
+        if (payload[keyName] !== undefined) return payload[keyName];
+        
+        const subKeys = ['action', 'customerAction', 'customer_action'];
+        for (const k of subKeys) {
+            if (payload[k] && typeof payload[k] === 'object' && payload[k][keyName] !== undefined) {
+                return payload[k][keyName];
+            }
+        }
+        if (payload.data && typeof payload.data === 'object') {
+            if (payload.data[keyName] !== undefined) return payload.data[keyName];
+            for (const k of subKeys) {
+                if (payload.data[k] && typeof payload.data[k] === 'object' && payload.data[k][keyName] !== undefined) {
+                    return payload.data[k][keyName];
+                }
+            }
+        }
+        return undefined;
+    };
+
+    const orderId = findField('orderId') || findField('order_id') || '';
+    const blockers = findField('blockers') || findField('required_files_blockers') || [];
+    const message = findField('message') || '';
+    const expiresAt = findField('expiresAt') || findField('expires_at') || '';
+    const status = findField('status') || 'PENDING';
+
+    return {
+        orderId,
+        requiredFiles,
+        blockers: Array.isArray(blockers) ? blockers : [],
+        message,
+        expiresAt,
+        status
+    };
+}
+
 // SANITIZE CONTROL PLANE RESPONSE UTILITY
 function sanitizeControlPlaneResponse(data) {
     if (!data || typeof data !== 'object') return data;
@@ -1463,7 +1536,11 @@ app.get('/api/customer-action/:orderId/:token', async (req, res) => {
             headers: controlPlaneAuthHeaders(),
             timeout: 10000 
         });
-        const sanitized = sanitizeControlPlaneResponse(cpRes.data);
+        const normalized = normalizeCustomerActionResponse(cpRes.data);
+        if (!normalized.orderId) {
+            normalized.orderId = orderId;
+        }
+        const sanitized = sanitizeControlPlaneResponse(normalized);
         return res.status(200).json(sanitized);
     } catch (err) {
         console.error(`[CUSTOMER_ACTION_GET_ERROR] orderId=${req.params.orderId} token=${req.params.token} message=${err.message}`);
@@ -1496,14 +1573,14 @@ app.post('/api/customer-action/:orderId/:token/upload', (req, res) => {
             }
 
             // Validate token first with ControlPlane public endpoint
-            let actionData;
+            let requiredFiles = [];
             try {
                 const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${req.params.orderId}/customer-action/${req.params.token}`;
                 const cpRes = await axios.get(cpUrl, { 
                     headers: controlPlaneAuthHeaders(),
                     timeout: 10000 
                 });
-                actionData = cpRes.data;
+                requiredFiles = extractRequiredFiles(cpRes.data);
             } catch (cpErr) {
                 const status = cpErr.response?.status || 401;
                 return res.status(status).json({ error: "INVALID_TOKEN", message: "Invalid or expired token." });
@@ -1513,12 +1590,19 @@ app.post('/api/customer-action/:orderId/:token/upload', (req, res) => {
             const role = req.body.role;
             const allowedRoles = ['INTERIOR_PDF', 'COVER_PDF'];
             if (!role || !allowedRoles.includes(role)) {
-                return res.status(400).json({ error: "INVALID_ROLE", message: `Role '${role}' is not supported.` });
+                return res.status(400).json({ 
+                    error: "INVALID_ROLE", 
+                    message: `Role '${role}' is not supported.`,
+                    requiredFiles: requiredFiles
+                });
             }
 
-            const requiredFiles = actionData.requiredFiles || actionData.required_files || [];
             if (!requiredFiles.includes(role)) {
-                return res.status(400).json({ error: "ROLE_NOT_REQUIRED", message: `Role '${role}' is not required for this action.` });
+                return res.status(400).json({ 
+                    error: "ROLE_NOT_REQUIRED", 
+                    message: `Role '${role}' is not required for this action.`,
+                    requiredFiles: requiredFiles 
+                });
             }
 
             // Generate storage ID: pf_<timestamp>_<random>
@@ -1609,6 +1693,15 @@ app.post('/api/customer-action/:orderId/:token/run', async (req, res) => {
         const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
         return res.status(status).json({ error: "RUN_FAILED", message: errorMsg });
     }
+});
+
+// SPA FALLBACK ROUTE FOR REMEDIATION PAGES
+app.get('/remediation/:orderId/:token', (req, res) => {
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+    return res.status(404).send("Frontend build dist/index.html not found. Please run npm run build.");
 });
 
 app.get('/api/production-files/metadata/:fileId', async (req, res) => {

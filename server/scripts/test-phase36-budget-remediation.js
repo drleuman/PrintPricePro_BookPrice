@@ -16,6 +16,16 @@ mockApp.get('/api/marketplace/orders/:orderId/customer-action/:token', (req, res
     if (token === 'invalid_token') {
         return res.status(401).json({ error: "UNAUTHORIZED", message: "Token is invalid or expired." });
     }
+    if (token === 'nested_token') {
+        return res.json({
+            success: true,
+            action: {
+                requiredFiles: ["INTERIOR_PDF"],
+                blockers: ["Bleed issues"],
+                message: "Nested layout check"
+            }
+        });
+    }
     return res.json({
         orderId,
         requiredFiles: ["INTERIOR_PDF", "COVER_PDF"],
@@ -197,7 +207,8 @@ async function runTests() {
 
         if (res5.status !== 400) throw new Error("Test 5 failed: Status should be 400");
         if (res5.data.error !== 'ROLE_NOT_REQUIRED') throw new Error("Test 5 failed: Should report ROLE_NOT_REQUIRED");
-        console.log("✅ Test 5 Passed: Role not listed in customerAction requiredFiles was rejected.");
+        if (!Array.isArray(res5.data.requiredFiles)) throw new Error("Test 5 failed: Response must include requiredFiles diagnostic array");
+        console.log("✅ Test 5 Passed: Role not listed in customerAction requiredFiles was rejected with diagnostics.");
 
         // Test 6: POST upload - Valid upload and sanitization of ControlPlane response
         console.log("\n[Test 6] POST upload - Valid Upload");
@@ -230,6 +241,32 @@ async function runTests() {
             throw new Error("Test 7 failed: Run response was not sanitized!");
         }
         console.log("✅ Test 7 Passed: Remediation validation run triggered and sanitized.");
+
+        // Test 8: GET customer action - nested token shape normalization
+        console.log("\n[Test 8] GET /api/customer-action/:orderId/:token - Nested Token Shape Normalization");
+        const res8 = await client.get('/api/customer-action/ord_123/nested_token');
+        console.log(`Status: ${res8.status}`);
+        console.log("Body:", res8.data);
+        if (res8.status !== 200) throw new Error("Test 8 failed: Status should be 200");
+        if (!Array.isArray(res8.data.requiredFiles) || res8.data.requiredFiles[0] !== "INTERIOR_PDF") {
+            throw new Error("Test 8 failed: requiredFiles was not properly normalized!");
+        }
+        if (res8.data.blockers[0] !== "Bleed issues") {
+            throw new Error("Test 8 failed: blockers was not properly normalized!");
+        }
+        console.log("✅ Test 8 Passed: Nested shape normalized correctly.");
+
+        // Test 9: GET /remediation/:orderId/:token - SPA fallback
+        console.log("\n[Test 9] GET /remediation/:orderId/:token - SPA Fallback");
+        const res9 = await client.get('/remediation/ord_123/valid_token');
+        console.log(`Status: ${res9.status}`);
+        if (res9.status !== 200 && res9.status !== 404) {
+            throw new Error(`Test 9 failed: SPA fallback status should be 200 or 404, got ${res9.status}`);
+        }
+        if (res9.status === 404 && !res9.data.includes("Frontend build dist/index.html not found")) {
+            throw new Error(`Test 9 failed: SPA fallback error text invalid, got: ${res9.data}`);
+        }
+        console.log("✅ Test 9 Passed: SPA fallback route handled correctly.");
 
         console.log("\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉");
     } catch (err) {
