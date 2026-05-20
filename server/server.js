@@ -1388,6 +1388,18 @@ app.get('/api/production-files/:fileId', async (req, res) => {
 
 const CONTROL_PLANE_INTERNAL_URL = process.env.CONTROL_PLANE_INTERNAL_URL || CONTROL_PLANE_BASE_URL;
 
+// CONTROL PLANE AUTH HEADERS HELPER
+function controlPlaneAuthHeaders(extra = {}) {
+    const token = process.env.PPOS_CONTROL_TOKEN || CONTROL_PLANE_API_KEY;
+    if (!token) {
+        throw new Error('PPOS_CONTROL_TOKEN_MISSING');
+    }
+    return {
+        'Authorization': `Bearer ${token}`,
+        ...extra
+    };
+}
+
 // SANITIZE CONTROL PLANE RESPONSE UTILITY
 function sanitizeControlPlaneResponse(data) {
     if (!data || typeof data !== 'object') return data;
@@ -1447,7 +1459,10 @@ app.get('/api/customer-action/:orderId/:token', async (req, res) => {
         const { orderId, token } = req.params;
         const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${orderId}/customer-action/${token}`;
         
-        const cpRes = await axios.get(cpUrl, { timeout: 10000 });
+        const cpRes = await axios.get(cpUrl, { 
+            headers: controlPlaneAuthHeaders(),
+            timeout: 10000 
+        });
         const sanitized = sanitizeControlPlaneResponse(cpRes.data);
         return res.status(200).json(sanitized);
     } catch (err) {
@@ -1484,7 +1499,10 @@ app.post('/api/customer-action/:orderId/:token/upload', (req, res) => {
             let actionData;
             try {
                 const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${req.params.orderId}/customer-action/${req.params.token}`;
-                const cpRes = await axios.get(cpUrl, { timeout: 10000 });
+                const cpRes = await axios.get(cpUrl, { 
+                    headers: controlPlaneAuthHeaders(),
+                    timeout: 10000 
+                });
                 actionData = cpRes.data;
             } catch (cpErr) {
                 const status = cpErr.response?.status || 401;
@@ -1530,10 +1548,9 @@ app.post('/api/customer-action/:orderId/:token/upload', (req, res) => {
             };
 
             const cpReuploadRes = await axios.post(reuploadUrl, payload, {
-                headers: {
-                    'Authorization': `Bearer ${CONTROL_PLANE_API_KEY}`,
+                headers: controlPlaneAuthHeaders({
                     'Content-Type': 'application/json'
-                },
+                }),
                 timeout: 15000
             });
 
@@ -1568,7 +1585,10 @@ app.post('/api/customer-action/:orderId/:token/run', async (req, res) => {
         // Validate token first
         try {
             const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${req.params.orderId}/customer-action/${req.params.token}`;
-            await axios.get(cpUrl, { timeout: 10000 });
+            await axios.get(cpUrl, { 
+                headers: controlPlaneAuthHeaders(),
+                timeout: 10000 
+            });
         } catch (cpErr) {
             const status = cpErr.response?.status || 401;
             return res.status(status).json({ error: "INVALID_TOKEN", message: "Invalid or expired token." });
@@ -1577,9 +1597,7 @@ app.post('/api/customer-action/:orderId/:token/run', async (req, res) => {
         // Call ControlPlane remediation/run
         const runUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/admin/marketplace/orders/${req.params.orderId}/remediation/run`;
         const cpRunRes = await axios.post(runUrl, {}, {
-            headers: {
-                'Authorization': `Bearer ${CONTROL_PLANE_API_KEY}`
-            },
+            headers: controlPlaneAuthHeaders(),
             timeout: 30000
         });
 
