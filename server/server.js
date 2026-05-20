@@ -1382,6 +1382,217 @@ app.get('/api/production-files/:fileId', async (req, res) => {
     });
 });
 
+// ==========================================
+// 🚀 CUSTOMER PORTAL / REMEDIATION PIPELINE (Phase 36.8)
+// ==========================================
+
+const CONTROL_PLANE_INTERNAL_URL = process.env.CONTROL_PLANE_INTERNAL_URL || CONTROL_PLANE_BASE_URL;
+
+// SANITIZE CONTROL PLANE RESPONSE UTILITY
+function sanitizeControlPlaneResponse(data) {
+    if (!data || typeof data !== 'object') return data;
+    const clean = Array.isArray(data) ? [] : {};
+    for (const key in data) {
+        const keyLower = key.toLowerCase();
+        if (
+            keyLower.includes('tokenhash') ||
+            keyLower.includes('token_hash') ||
+            keyLower.includes('token') ||
+            keyLower.includes('metadata') ||
+            keyLower.includes('storageroot') ||
+            keyLower.includes('storage_root') ||
+            keyLower.includes('filepath') ||
+            keyLower.includes('file_path') ||
+            keyLower.includes('path') ||
+            keyLower.includes('debug') ||
+            keyLower.includes('raw') ||
+            keyLower.includes('secret') ||
+            keyLower.includes('password')
+        ) {
+            continue;
+        }
+        
+        const val = data[key];
+        if (val && typeof val === 'object') {
+            clean[key] = sanitizeControlPlaneResponse(val);
+        } else if (typeof val === 'string') {
+            let cleanStr = val;
+            cleanStr = cleanStr.replace(/[a-zA-Z]:\\[\\\w\s.-]+/g, '[REDACTED_PATH]');
+            cleanStr = cleanStr.replace(/\/var\/www\/[^\s]*/g, '[REDACTED_PATH]');
+            clean[key] = cleanStr;
+        } else {
+            clean[key] = val;
+        }
+    }
+    return clean;
+}
+
+// Memory-based Multer config for customer reupload
+const customerReuploadMemoryStorage = multer.memoryStorage();
+const getCustomerReuploadLimit = () => {
+    if (process.env.CUSTOMER_REUPLOAD_MAX_BYTES) {
+        return parseInt(process.env.CUSTOMER_REUPLOAD_MAX_BYTES, 10);
+    }
+    return 500 * 1024 * 1024; // 500MB
+};
+
+const customerReuploadUpload = multer({
+    storage: customerReuploadMemoryStorage,
+    limits: { fileSize: getCustomerReuploadLimit() }
+});
+
+// GET /api/customer-action/:orderId/:token
+app.get('/api/customer-action/:orderId/:token', async (req, res) => {
+    try {
+        const { orderId, token } = req.params;
+        const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${orderId}/customer-action/${token}`;
+        
+        const cpRes = await axios.get(cpUrl, { timeout: 10000 });
+        const sanitized = sanitizeControlPlaneResponse(cpRes.data);
+        return res.status(200).json(sanitized);
+    } catch (err) {
+        console.error(`[CUSTOMER_ACTION_GET_ERROR] orderId=${req.params.orderId} token=${req.params.token} message=${err.message}`);
+        const status = err.response?.status || 500;
+        const errorMsg = err.response?.data?.error || err.response?.data?.message || "Failed to retrieve customer action";
+        return res.status(status).json({ error: errorMsg });
+    }
+});
+
+// POST /api/customer-action/:orderId/:token/upload
+app.post('/api/customer-action/:orderId/:token/upload', (req, res) => {
+    customerReuploadUpload.single('file')(req, res, async (err) => {
+        if (err) {
+            console.error(`[CUSTOMER_ACTION_UPLOAD_FAILED] Multer error: ${err.message}`);
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ error: "FILE_TOO_LARGE", message: "File exceeds the maximum upload size limit." });
+            }
+            return res.status(400).json({ error: "UPLOAD_ERROR", message: err.message });
+        }
+
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: "EMPTY_FILE", message: "No file uploaded or file is empty." });
+        }
+
+        try {
+            // Validate magic bytes start with %PDF
+            if (file.buffer.length < 4 || file.buffer.toString('utf8', 0, 4) !== '%PDF') {
+                return res.status(400).json({ error: "INVALID_PDF_SIGNATURE", message: "File does not start with %PDF magic bytes." });
+            }
+
+            // Validate token first with ControlPlane public endpoint
+            let actionData;
+            try {
+                const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${req.params.orderId}/customer-action/${req.params.token}`;
+                const cpRes = await axios.get(cpUrl, { timeout: 10000 });
+                actionData = cpRes.data;
+            } catch (cpErr) {
+                const status = cpErr.response?.status || 401;
+                return res.status(status).json({ error: "INVALID_TOKEN", message: "Invalid or expired token." });
+            }
+
+            // Validate role is included in customerAction.requiredFiles and only allow allowed roles
+            const role = req.body.role;
+            const allowedRoles = ['INTERIOR_PDF', 'COVER_PDF'];
+            if (!role || !allowedRoles.includes(role)) {
+                return res.status(400).json({ error: "INVALID_ROLE", message: `Role '${role}' is not supported.` });
+            }
+
+            const requiredFiles = actionData.requiredFiles || actionData.required_files || [];
+            if (!requiredFiles.includes(role)) {
+                return res.status(400).json({ error: "ROLE_NOT_REQUIRED", message: `Role '${role}' is not required for this action.` });
+            }
+
+            // Generate storage ID: pf_<timestamp>_<random>
+            const timestamp = Date.now();
+            const random = crypto.randomBytes(4).toString('hex');
+            const storageId = `pf_${timestamp}_${random}`;
+            
+            // Store file to PRODUCTION_FILES_DIR/{storageId}.pdf
+            const filePath = path.join(PRODUCTION_FILES_DIR, `${storageId}.pdf`);
+            fs.writeFileSync(filePath, file.buffer);
+
+            // Compute sha256 checksum
+            const checksum = crypto.createHash('sha256').update(file.buffer).digest('hex');
+            const storagePath = `/api/production-files/download/${storageId}`;
+
+            // Call ControlPlane reupload endpoint
+            const reuploadUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/admin/marketplace/orders/${req.params.orderId}/remediation/reupload`;
+            const payload = {
+                role,
+                originalName: file.originalname,
+                mimeType: 'application/pdf',
+                sizeBytes: file.size,
+                checksumSha256: checksum,
+                storagePath,
+                autoBindPreflight: false,
+                autoEvaluateInvoiceGate: false
+            };
+
+            const cpReuploadRes = await axios.post(reuploadUrl, payload, {
+                headers: {
+                    'Authorization': `Bearer ${CONTROL_PLANE_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 15000
+            });
+
+            // Return sanitized ControlPlane response plus upload metadata
+            const sanitizedCpRes = sanitizeControlPlaneResponse(cpReuploadRes.data);
+            return res.status(200).json({
+                ok: true,
+                controlPlaneResponse: sanitizedCpRes,
+                metadata: {
+                    storageId,
+                    role,
+                    originalName: file.originalname,
+                    mimeType: 'application/pdf',
+                    sizeBytes: file.size,
+                    checksumSha256: checksum,
+                    storagePath
+                }
+            });
+
+        } catch (processErr) {
+            console.error(`[CUSTOMER_ACTION_UPLOAD_PROCESS_ERROR] ${processErr.message}`);
+            const status = processErr.response?.status || 500;
+            const errorMsg = processErr.response?.data?.error || processErr.response?.data?.message || processErr.message;
+            return res.status(status).json({ error: "INTERNAL_ERROR", message: errorMsg });
+        }
+    });
+});
+
+// POST /api/customer-action/:orderId/:token/run
+app.post('/api/customer-action/:orderId/:token/run', async (req, res) => {
+    try {
+        // Validate token first
+        try {
+            const cpUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/marketplace/orders/${req.params.orderId}/customer-action/${req.params.token}`;
+            await axios.get(cpUrl, { timeout: 10000 });
+        } catch (cpErr) {
+            const status = cpErr.response?.status || 401;
+            return res.status(status).json({ error: "INVALID_TOKEN", message: "Invalid or expired token." });
+        }
+
+        // Call ControlPlane remediation/run
+        const runUrl = `${CONTROL_PLANE_INTERNAL_URL}/api/admin/marketplace/orders/${req.params.orderId}/remediation/run`;
+        const cpRunRes = await axios.post(runUrl, {}, {
+            headers: {
+                'Authorization': `Bearer ${CONTROL_PLANE_API_KEY}`
+            },
+            timeout: 30000
+        });
+
+        const sanitizedCpRes = sanitizeControlPlaneResponse(cpRunRes.data);
+        return res.status(200).json(sanitizedCpRes);
+    } catch (err) {
+        console.error(`[CUSTOMER_ACTION_RUN_ERROR] orderId=${req.params.orderId} token=${req.params.token} message=${err.message}`);
+        const status = err.response?.status || 500;
+        const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
+        return res.status(status).json({ error: "RUN_FAILED", message: errorMsg });
+    }
+});
+
 app.get('/api/production-files/metadata/:fileId', async (req, res) => {
     const file = await repositories.productionFiles.getById(req.params.fileId);
     if (!file) {

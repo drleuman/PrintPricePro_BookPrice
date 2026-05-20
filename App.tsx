@@ -61,6 +61,7 @@ import { t } from './i18n/en';
 import OrderIntentDetails from './components/OrderIntentDetails';
 import { PrinthouseQueue } from './components/PrinthouseQueue';
 import UserOrders from './components/UserOrders';
+import { CustomerRemediationPage } from './components/CustomerRemediationPage';
 
 // ==== Helpers para extraer info del PDF ====
 
@@ -1140,6 +1141,8 @@ const App: React.FC = () => {
 
   const combinedOffersError = orderError || null;
 
+  const remediationMatch = window.location.pathname.match(/^\/remediation\/([^/]+)\/([^/]+)/);
+
   return (
     <div className="flex flex-col min-h-screen bg-corporate-primary selection:bg-corporate-accent selection:text-white">
       {/* Honeypot Node - Anti-Bot */}
@@ -1162,7 +1165,12 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 container mx-auto px-4 py-8 md:py-12 max-w-[1400px]">
-        {currentView === 'marketplace' ? (
+        {remediationMatch ? (
+          <CustomerRemediationPage
+            orderId={remediationMatch[1]}
+            token={remediationMatch[2]}
+          />
+        ) : currentView === 'marketplace' ? (
           <>
             {/* Visual Workflow Guidance */}
             <CheckoutStepper currentStep={currentStep} />
