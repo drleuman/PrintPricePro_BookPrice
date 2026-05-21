@@ -173,6 +173,30 @@ const ORDER_INTENT_RETENTION_DAYS = parseInt(process.env.ORDER_INTENT_RETENTION_
 
 const APP_START_TIME = Date.now();
 
+// ---- selected_offer_snapshot Null-Safety Helpers (v5.3 - Phase 37.3 Server Helpers) ----
+function getSelectedOfferSnapshotSafe(obj) {
+    if (!obj) return null;
+    return (
+        obj?.offer?.selected_offer_snapshot ||
+        obj?.offer?.selectedOfferSnapshot ||
+        obj?.selected_offer_snapshot ||
+        obj?.selectedOfferSnapshot ||
+        obj?.snapshot?.offer?.selected_offer_snapshot ||
+        obj?.payload?.order_snapshot?.offer?.selected_offer_snapshot ||
+        null
+    );
+}
+
+function getPrinterIdentitySafe(obj) {
+    const snapshot = getSelectedOfferSnapshotSafe(obj);
+    return {
+        printerId: snapshot?.printer_id || 'unknown-printer',
+        printerName: snapshot?.printer_name || 'Unknown Printer',
+        specs: snapshot?.specs || {},
+        raw_offer_snapshot: snapshot?.raw_offer_snapshot || {}
+    };
+}
+
 console.log(`[SECURITY_CONFIG] rate_limit=${RATE_LIMIT_ENABLED} cleanup=${CLEANUP_ENABLED} retention_hours=${PRODUCTION_FILE_RETENTION_HOURS}`);
 
 if (process.env.NODE_ENV === 'production' && !ADMIN_API_TOKEN) {
@@ -2854,8 +2878,8 @@ app.get('/api/order-intents', async (req, res) => {
                 totals: i.totals,
                 created_at: i.created_at,
                 // v5.3: Include metadata for rich listing
-                specs: i.payload?.order_snapshot?.specs || i.offer?.selected_offer_snapshot?.raw_offer_snapshot?.specs || {},
-                offer: i.offer?.selected_offer_snapshot || {},
+                specs: i.payload?.order_snapshot?.specs || getPrinterIdentitySafe(i).raw_offer_snapshot?.specs || {},
+                offer: getSelectedOfferSnapshotSafe(i) || {},
                 production_files: i.production_files || {}
             })),
             // Maintain backward compatibility for any existing consumers
@@ -2891,10 +2915,10 @@ app.get('/api/orders', async (req, res) => {
             lifecycle: i.lifecycle,
             offer_price: i.totals.total_price,
             currency: i.totals.currency,
-            offer_print_house: i.offer?.selected_offer_snapshot?.printer_name || 'BPE Engine',
+            offer_print_house: getSelectedOfferSnapshotSafe(i)?.printer_name || 'BPE Engine',
             created_at: i.created_at,
             is_intent: true,
-            specs: i.offer?.selected_offer_snapshot?.raw_offer_snapshot?.specs || {}
+            specs: getPrinterIdentitySafe(i).raw_offer_snapshot?.specs || {}
         }))
     });
 });
@@ -3162,6 +3186,7 @@ async function createStripeCheckoutSession(orderIntent) {
         throw new Error("STRIPE_PACKAGE_MISSING");
     }
 
+    const printerIdentity = getPrinterIdentitySafe(orderIntent);
     const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: [
@@ -3170,7 +3195,7 @@ async function createStripeCheckoutSession(orderIntent) {
                     currency: orderIntent.totals.currency.toLowerCase(),
                     product_data: {
                         name: `Order Reference: ${orderIntent.public_ref}`,
-                        description: `PrintPricePro BookPrice Marketplace Order (${orderIntent.offer.selected_offer_snapshot.printer_name})`,
+                        description: `PrintPricePro BookPrice Marketplace Order (${printerIdentity.printerName})`,
                     },
                     unit_amount: Math.round(orderIntent.totals.grand_total * 100), // Stripe uses cents
                 },
@@ -3181,8 +3206,8 @@ async function createStripeCheckoutSession(orderIntent) {
         metadata: {
             order_intent_id: orderIntent.order_intent_id,
             public_ref: orderIntent.public_ref,
-            offer_session_id: orderIntent.offer.offer_session_id,
-            offer_id: orderIntent.offer.offer_id,
+            offer_session_id: orderIntent.offer?.offer_session_id || null,
+            offer_id: orderIntent.offer?.offer_id || null,
         },
         success_url: `${PUBLIC_APP_BASE_URL}/?payment=success&order_intent_id=${orderIntent.order_intent_id}`,
         cancel_url: `${PUBLIC_APP_BASE_URL}/?payment=cancelled&order_intent_id=${orderIntent.order_intent_id}`,
@@ -3465,9 +3490,9 @@ async function buildControlPlaneOrderPayload(orderIntent) {
         public_ref: orderIntent.public_ref,
         customer: orderIntent.customer,
         pricing: {
-            offer_session_id: orderIntent.offer.offer_session_id,
-            offer_id: orderIntent.offer.offer_id,
-            selected_offer_snapshot: orderIntent.offer.selected_offer_snapshot,
+            offer_session_id: orderIntent.offer?.offer_session_id || null,
+            offer_id: orderIntent.offer?.offer_id || null,
+            selected_offer_snapshot: getSelectedOfferSnapshotSafe(orderIntent),
             totals: orderIntent.totals
         },
         production_files: files,
@@ -3481,8 +3506,8 @@ async function buildControlPlaneOrderPayload(orderIntent) {
             payment: orderIntent.payment
         },
         printhouse: {
-            printhouse_id: orderIntent.offer.selected_offer_snapshot.printer_id,
-            printhouse_name: orderIntent.offer.selected_offer_snapshot.printer_name
+            printhouse_id: getPrinterIdentitySafe(orderIntent).printerId,
+            printhouse_name: getPrinterIdentitySafe(orderIntent).printerName
         },
         metadata_json: {
             marketplace_phase: "PAYMENT_CONFIRMED_HANDOFF",
@@ -3541,10 +3566,11 @@ async function finalizeOrderIntent(orderIntentId) {
     }
 
     // 3. Prepare Printhouse Handoff Package
+    const printerIdentity = getPrinterIdentitySafe(intent);
     intent.printhouse_handoff = {
         status: 'READY',
-        printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
-        printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+        printhouse_id: printerIdentity.printerId,
+        printhouse_name: printerIdentity.printerName,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
@@ -3652,12 +3678,13 @@ async function buildDispatchPackage(intent) {
         };
     }));
 
+    const printerIdentity = getPrinterIdentitySafe(intent);
     const pkg = {
         package_id: packageId,
         order_intent_id: intent.order_intent_id,
         public_ref: intent.public_ref,
-        printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
-        printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+        printhouse_id: printerIdentity.printerId,
+        printhouse_name: printerIdentity.printerName,
         status: 'CREATED',
         control_plane_order_ref: intent.control_plane?.order_ref,
         files: files,
@@ -3667,7 +3694,7 @@ async function buildDispatchPackage(intent) {
             issue_count: intent.preflight?.jobs.reduce((sum, j) => sum + (j.issue_count || 0), 0),
             jobs: intent.preflight?.jobs || []
         },
-        production_specs: intent.offer.selected_offer_snapshot.specs || {},
+        production_specs: printerIdentity.specs,
         customer_summary: {
             name: intent.customer?.name,
             email: intent.customer?.email,
@@ -3681,8 +3708,8 @@ async function buildDispatchPackage(intent) {
         },
         production_queue: {
             status: 'QUEUED',
-            printhouse_id: intent.offer.selected_offer_snapshot.printer_id,
-            printhouse_name: intent.offer.selected_offer_snapshot.printer_name,
+            printhouse_id: printerIdentity.printerId,
+            printhouse_name: printerIdentity.printerName,
             assigned_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             operator_notes: '',
@@ -3690,7 +3717,7 @@ async function buildDispatchPackage(intent) {
             shipment: null
         },
         access: {
-            token_id: signDispatchToken(packageId, intent.order_intent_id, intent.offer.selected_offer_snapshot.printer_id, expiresAt),
+            token_id: signDispatchToken(packageId, intent.order_intent_id, printerIdentity.printerId, expiresAt),
             expires_at: expiresAt,
             last_accessed_at: null,
             access_count: 0
@@ -4903,7 +4930,7 @@ app.post('/api/order-intents/:id/exception/alternate-printer/prepare', adminOnly
 
         res.json({
             ok: true,
-            original_printer_id: intent.offer.selected_offer_snapshot.printer_id,
+            original_printer_id: getPrinterIdentitySafe(intent).printerId,
             candidates: [
                 // In a real flow, we'd query the Pricing Engine or BPE list
                 { printer_id: "ALT_001", printer_name: "Mock Alternate Partner A", lead_time: 5, price: intent.totals.total_price },
