@@ -139,6 +139,9 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
   const offerSnapshot = getSelectedOfferSnapshot(intent);
   const rawSpecs = offerSnapshot?.raw_offer_snapshot?.specs || offerSnapshot?.specs || {};
   
+  // Safe currency fallback as requested
+  const displayCurrency = intent.totals?.currency || intent.payment?.currency || (intent as any).invoice?.currency || 'EUR';
+  
   const specs = {
     format: normalizeText(snapshot?.specs?.format || rawSpecs?.book_size || rawSpecs?.format, 'Custom'),
     copies: normalizeNum(snapshot?.specs?.copies || rawSpecs?.copies, 0),
@@ -240,10 +243,10 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
             {/* Status Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                    { label: 'Marketplace', value: intent.lifecycle.quote_status, icon: DocumentCheckIcon },
-                    { label: 'Files', value: intent.lifecycle.files_status, icon: DocumentCheckIcon },
-                    { label: 'Preflight', value: intent.lifecycle.preflight_status, icon: DocumentCheckIcon },
-                    { label: 'Payment', value: intent.lifecycle.payment_status, icon: CurrencyDollarIcon },
+                    { label: 'Marketplace', value: intent.lifecycle?.quote_status || '—', icon: DocumentCheckIcon },
+                    { label: 'Files', value: intent.lifecycle?.files_status || '—', icon: DocumentCheckIcon },
+                    { label: 'Preflight', value: intent.lifecycle?.preflight_status || '—', icon: DocumentCheckIcon },
+                    { label: 'Payment', value: intent.lifecycle?.payment_status || '—', icon: CurrencyDollarIcon },
                 ].map((s, i) => (
                     <div key={i} className="bg-corporate-secondary/50 border border-white/5 p-4">
                         <span className="text-[0.55rem] font-technical uppercase tracking-widest text-corporate-muted block mb-2">{s.label}</span>
@@ -317,22 +320,22 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                 <div className="space-y-3 mb-6">
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Subtotal</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{intent.totals.currency} {intent.totals.total_price.toFixed(2)}</span>
+                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.total_price ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Shipping</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{intent.totals.currency} {intent.totals.shipping_amount.toFixed(2)}</span>
+                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.shipping_amount ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Tax (VAT)</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{intent.totals.currency} {intent.totals.tax_amount.toFixed(2)}</span>
+                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.tax_amount ?? 0).toFixed(2)}</span>
                     </div>
                 </div>
 
                 <div className="pt-4 border-t border-corporate-accent/20 flex justify-between items-center mb-8">
                      <span className="text-[0.8rem] font-black uppercase tracking-widest text-corporate-text">Total</span>
                      <span className="text-[1.2rem] font-mono font-black text-corporate-accent tabular-nums">
-                        {intent.totals.currency} {intent.totals.grand_total.toFixed(2)}
+                        {displayCurrency} {(intent.totals?.grand_total ?? 0).toFixed(2)}
                      </span>
                 </div>
 
@@ -343,7 +346,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted">Created At</span>
                         </div>
                         <span className="text-[0.7rem] font-mono text-corporate-text-secondary">
-                            {new Date(intent.created_at).toLocaleString()}
+                            {intent.created_at ? new Date(intent.created_at).toLocaleString() : '—'}
                         </span>
                     </div>
 
@@ -367,7 +370,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                 Invoice and payment will be available after files pass Preflight validation.
                             </p>
                         </div>
-                     ) : !intent.payment || intent.payment.status === 'NOT_STARTED' ? (
+                     ) : !intent.payment || intent.payment?.status === 'NOT_STARTED' ? (
                         <button 
                             onClick={async () => {
                                 try {
@@ -388,9 +391,9 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                         </button>
                      ) : (
                         <div className="space-y-4">
-                            {intent.payment.provider === 'stripe' && intent.payment.status === 'PENDING' && (
+                            {intent.payment?.provider === 'stripe' && intent.payment?.status === 'PENDING' && (
                                 <a 
-                                    href={intent.payment.checkout_url}
+                                    href={intent.payment?.checkout_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="block w-full py-4 bg-corporate-accent hover:bg-corporate-accent-hover border border-corporate-accent/20 text-center text-[0.75rem] font-black uppercase tracking-[0.2em] text-white transition-all shadow-[0_0_20px_rgba(220,0,0,0.15)]"
@@ -399,7 +402,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                 </a>
                             )}
 
-                            {intent.payment.provider === 'bank_transfer' && (
+                            {intent.payment?.provider === 'bank_transfer' && (
                                 <div className="bg-corporate-accent/5 border border-corporate-accent/20 p-5 space-y-4">
                                     <div className="flex items-center gap-2 mb-2">
                                         <BuildingLibraryIcon className="w-4 h-4 text-corporate-accent" />
@@ -409,23 +412,23 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                     <div className="space-y-2 text-[0.65rem] font-mono">
                                         <div className="flex justify-between border-b border-white/5 pb-1">
                                             <span className="text-corporate-muted">Account</span>
-                                            <span className="text-corporate-text text-right">{intent.payment.instructions?.account_name}</span>
+                                            <span className="text-corporate-text text-right">{intent.payment?.instructions?.account_name || '—'}</span>
                                         </div>
                                         <div className="flex justify-between border-b border-white/5 pb-1">
                                             <span className="text-corporate-muted">IBAN</span>
-                                            <span className="text-corporate-text text-right">{intent.payment.instructions?.iban}</span>
+                                            <span className="text-corporate-text text-right">{intent.payment?.instructions?.iban || '—'}</span>
                                         </div>
                                         <div className="flex justify-between border-b border-white/5 pb-1">
                                             <span className="text-corporate-muted">SWIFT</span>
-                                            <span className="text-corporate-text text-right">{intent.payment.instructions?.swift}</span>
+                                            <span className="text-corporate-text text-right">{intent.payment?.instructions?.swift || '—'}</span>
                                         </div>
                                         <div className="flex justify-between border-b border-white/5 pb-1 pt-2">
                                             <span className="text-corporate-accent font-bold">Reference</span>
-                                            <span className="text-corporate-text font-black text-right">{intent.payment.instructions?.reference}</span>
+                                            <span className="text-corporate-text font-black text-right">{intent.payment?.instructions?.reference || '—'}</span>
                                         </div>
                                         <div className="flex justify-between pt-1">
                                             <span className="text-corporate-muted">Amount</span>
-                                            <span className="text-corporate-text font-black text-right">{intent.payment.instructions?.currency} {intent.payment.instructions?.amount.toFixed(2)}</span>
+                                            <span className="text-corporate-text font-black text-right">{intent.payment?.instructions?.currency || displayCurrency} {(intent.payment?.instructions?.amount ?? 0).toFixed(2)}</span>
                                         </div>
                                     </div>
 
@@ -441,9 +444,9 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <div className="flex flex-col gap-1 pt-2">
                                 <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted">Payment Status</span>
                                 <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${intent.payment.status === 'PAID' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
-                                    <span className={`text-[0.7rem] font-black uppercase tracking-widest ${intent.payment.status === 'PAID' ? 'text-green-500' : 'text-yellow-500'}`}>
-                                        {intent.payment.status}
+                                    <div className={`w-2 h-2 rounded-full ${intent.payment?.status === 'PAID' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
+                                    <span className={`text-[0.7rem] font-black uppercase tracking-widest ${intent.payment?.status === 'PAID' ? 'text-green-500' : 'text-yellow-500'}`}>
+                                        {intent.payment?.status || '—'}
                                     </span>
                                 </div>
                             </div>
@@ -473,7 +476,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <div className="space-y-3">
                                 <div>
                                     <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted block mb-1">Control Plane Ref</span>
-                                    <span className="text-[0.8rem] font-mono font-black text-corporate-text">{intent.control_plane.order_ref}</span>
+                                    <span className="text-[0.8rem] font-mono font-black text-corporate-text">{intent.control_plane?.order_ref || '—'}</span>
                                 </div>
                                 <div className="flex justify-between items-end">
                                     <div>
@@ -481,13 +484,13 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                         <div className="flex items-center gap-2">
                                             <div className={`w-1.5 h-1.5 rounded-full ${intent.printhouse_handoff?.status === 'SENT' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`} />
                                             <span className="text-[0.7rem] font-black uppercase tracking-widest text-corporate-text">
-                                                {intent.printhouse_handoff?.status}
+                                                {intent.printhouse_handoff?.status || '—'}
                                             </span>
                                         </div>
                                     </div>
                                     <div className="text-right">
                                         <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted block mb-1">Printer</span>
-                                        <span className="text-[0.65rem] font-black uppercase tracking-tight text-corporate-text-secondary">{intent.printhouse_handoff?.printhouse_name}</span>
+                                        <span className="text-[0.65rem] font-black uppercase tracking-tight text-corporate-text-secondary">{intent.printhouse_handoff?.printhouse_name || '—'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -497,7 +500,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             {intent.control_plane?.status === 'FAILED' && (
                                 <div className="p-3 bg-red-500/10 border border-red-500/20 mb-4">
                                     <p className="text-[0.65rem] text-red-400 font-bold uppercase tracking-widest mb-1">Handoff Failed</p>
-                                    <p className="text-[0.6rem] text-red-300/70 italic">{intent.control_plane.error?.message || 'Submission error.'}</p>
+                                    <p className="text-[0.6rem] text-red-300/70 italic">{intent.control_plane?.error?.message || 'Submission error.'}</p>
                                 </div>
                             )}
 
@@ -571,7 +574,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                     <DocumentCheckIcon className="w-5 h-5 text-corporate-accent" />
                                     <span className="text-[0.75rem] font-black uppercase tracking-widest text-corporate-accent">Package Ready</span>
                                 </div>
-                                <span className="text-[0.6rem] font-mono text-corporate-muted">#{intent.dispatch_package_id.slice(-8).toUpperCase()}</span>
+                                <span className="text-[0.6rem] font-mono text-corporate-muted">#{intent.dispatch_package_id ? intent.dispatch_package_id.slice(-8).toUpperCase() : '—'}</span>
                             </div>
                             
                             <div className="space-y-3">
@@ -606,7 +609,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                     Audit Metadata
                 </h4>
                 <div className="space-y-2 font-mono text-[0.6rem] text-corporate-muted">
-                    <p>SESSION_ID: {intent.session_id.slice(0, 12)}...</p>
+                    <p>SESSION_ID: {intent.session_id ? intent.session_id.slice(0, 12) + '...' : '—'}</p>
                     <p>CONTRACT: BPE_MARKETPLACE_NATIVE</p>
                     <p>VERSION: v5.3_PHASE_11</p>
                 </div>
