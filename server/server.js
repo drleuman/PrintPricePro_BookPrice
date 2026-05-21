@@ -1695,6 +1695,192 @@ app.post('/api/customer-action/:orderId/:token/run', async (req, res) => {
     }
 });
 
+// SANITIZE INVOICE / PAYMENT RESPONSE FOR PHASE 37.2
+function sanitizeInvoicePaymentResponse(data) {
+    if (!data || typeof data !== 'object') return data;
+    const clean = Array.isArray(data) ? [] : {};
+    for (const key in data) {
+        const keyLower = key.toLowerCase();
+        
+        // Do NOT strip bank transfer instruction keys
+        const isBankInstruction = ['iban', 'bic', 'beneficiary', 'reference', 'amount', 'currency'].includes(keyLower);
+        
+        if (!isBankInstruction && (
+            keyLower.includes('token') ||
+            keyLower.includes('secret') ||
+            keyLower.includes('metadata') ||
+            keyLower.includes('raw') ||
+            keyLower.includes('debug') ||
+            keyLower.includes('path')
+        )) {
+            continue;
+        }
+        
+        const val = data[key];
+        if (val && typeof val === 'object') {
+            clean[key] = sanitizeInvoicePaymentResponse(val);
+        } else if (typeof val === 'string') {
+            let cleanStr = val;
+            // Redact physical filesystem paths
+            cleanStr = cleanStr.replace(/[a-zA-Z]:\\[\\\w\s.-]+/g, '[REDACTED_PATH]');
+            cleanStr = cleanStr.replace(/\/var\/www\/[^\s]*/g, '[REDACTED_PATH]');
+            clean[key] = cleanStr;
+        } else {
+            clean[key] = val;
+        }
+    }
+    return clean;
+}
+
+// VERIFY CONTROL PLANE ORDER ACCESS
+async function verifyCPOrderAccess(req, res, cpOrderId) {
+    const intent = await repositories.orderIntents.getByControlPlaneOrderId(cpOrderId);
+    if (!intent) {
+        const identity = resolveRequestIdentity(req);
+        if (!identity.isAdmin) {
+            res.status(404).json({
+                ok: false,
+                error: 'ORDER_INTENT_NOT_FOUND_FOR_CP_ORDER',
+                message: 'No matching order intent found for this ControlPlane order.'
+            });
+            return false;
+        }
+        return true;
+    }
+    if (!assertOrderIntentAccess(req, intent)) {
+        res.status(403).json({
+            ok: false,
+            error: 'ACCESS_DENIED',
+            message: 'You do not have access to this marketplace order.'
+        });
+        return false;
+    }
+    return true;
+}
+
+// GET /api/marketplace-order/:cpOrderId/invoice/status
+app.get('/api/marketplace-order/:cpOrderId/invoice/status', async (req, res) => {
+    const { cpOrderId } = req.params;
+    const hasAccess = await verifyCPOrderAccess(req, res, cpOrderId);
+    if (!hasAccess) return;
+
+    try {
+        const cpUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/marketplace/orders/${cpOrderId}/invoice/status`;
+        const cpRes = await axios.get(cpUrl, {
+            headers: controlPlaneAuthHeaders(),
+            timeout: 10000
+        });
+
+        const data = cpRes.data || {};
+        const sanitized = sanitizeInvoicePaymentResponse(data);
+        
+        // Returns sanitized: ok, orderId, orderStatus, invoiceReady, blockers, invoice, payment, readiness
+        const responseData = {
+            ok: sanitized.ok !== undefined ? sanitized.ok : true,
+            orderId: sanitized.orderId,
+            orderStatus: sanitized.orderStatus,
+            invoiceReady: sanitized.invoiceReady,
+            blockers: sanitized.blockers,
+            invoice: sanitized.invoice,
+            payment: sanitized.payment,
+            readiness: sanitized.readiness
+        };
+        
+        return res.status(200).json(responseData);
+    } catch (err) {
+        console.error(`[INVOICE_STATUS_PROXY_ERROR] cpOrderId=${cpOrderId} message=${err.message}`);
+        if (err.response) {
+            const status = err.response.status;
+            const sanitized = sanitizeInvoicePaymentResponse(err.response.data);
+            return res.status(status).json(sanitized);
+        }
+        return res.status(500).json({ ok: false, error: "INTERNAL_ERROR", message: err.message });
+    }
+});
+
+// POST /api/marketplace-order/:cpOrderId/invoice/generate
+app.post('/api/marketplace-order/:cpOrderId/invoice/generate', async (req, res) => {
+    const { cpOrderId } = req.params;
+    const hasAccess = await verifyCPOrderAccess(req, res, cpOrderId);
+    if (!hasAccess) return;
+
+    try {
+        const cpUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/marketplace/orders/${cpOrderId}/invoice/generate`;
+        const cpRes = await axios.post(cpUrl, {}, {
+            headers: controlPlaneAuthHeaders(),
+            timeout: 15000
+        });
+
+        const data = cpRes.data || {};
+        const sanitized = sanitizeInvoicePaymentResponse(data);
+        return res.status(cpRes.status || 200).json(sanitized);
+    } catch (err) {
+        console.error(`[INVOICE_GENERATE_PROXY_ERROR] cpOrderId=${cpOrderId} message=${err.message}`);
+        if (err.response) {
+            const status = err.response.status;
+            const sanitized = sanitizeInvoicePaymentResponse(err.response.data);
+            return res.status(status).json(sanitized);
+        }
+        return res.status(500).json({ ok: false, error: "INTERNAL_ERROR", message: err.message });
+    }
+});
+
+// GET /api/marketplace-order/:cpOrderId/payment/status
+app.get('/api/marketplace-order/:cpOrderId/payment/status', async (req, res) => {
+    const { cpOrderId } = req.params;
+    const hasAccess = await verifyCPOrderAccess(req, res, cpOrderId);
+    if (!hasAccess) return;
+
+    try {
+        const cpUrl = `${CONTROL_PLANE_BASE_URL}/api/admin/marketplace/orders/${cpOrderId}/invoice/status`;
+        const cpRes = await axios.get(cpUrl, {
+            headers: controlPlaneAuthHeaders(),
+            timeout: 10000
+        });
+
+        const data = cpRes.data || {};
+        const sanitized = sanitizeInvoicePaymentResponse(data);
+
+        // Returns reduced shape: ok, orderId, orderStatus, invoiceReady, payment, invoiceNumber, amount, currency
+        const invoiceNumber = sanitized.invoice?.invoiceNumber || 
+                              sanitized.invoice?.invoice_number || 
+                              sanitized.invoiceNumber || 
+                              sanitized.invoice_number || 
+                              null;
+                              
+        const amount = sanitized.payment?.amount || 
+                       sanitized.invoice?.amount || 
+                       sanitized.amount || 
+                       null;
+                       
+        const currency = sanitized.payment?.currency || 
+                         sanitized.invoice?.currency || 
+                         sanitized.currency || 
+                         null;
+
+        const responseData = {
+            ok: sanitized.ok !== undefined ? sanitized.ok : true,
+            orderId: sanitized.orderId,
+            orderStatus: sanitized.orderStatus,
+            invoiceReady: sanitized.invoiceReady,
+            payment: sanitized.payment,
+            invoiceNumber,
+            amount,
+            currency
+        };
+
+        return res.status(200).json(responseData);
+    } catch (err) {
+        console.error(`[PAYMENT_STATUS_PROXY_ERROR] cpOrderId=${cpOrderId} message=${err.message}`);
+        if (err.response) {
+            const status = err.response.status;
+            const sanitized = sanitizeInvoicePaymentResponse(err.response.data);
+            return res.status(status).json(sanitized);
+        }
+        return res.status(500).json({ ok: false, error: "INTERNAL_ERROR", message: err.message });
+    }
+});
+
 // SPA FALLBACK ROUTE FOR REMEDIATION PAGES
 app.get('/remediation/:orderId/:token', (req, res) => {
     const indexPath = path.join(__dirname, '../dist/index.html');
@@ -2926,6 +3112,17 @@ app.post('/api/order-intents/:id/billing/create', async (req, res) => {
 
     if (!assertOrderIntentAccess(req, intent)) {
         return res.status(403).json({ ok: false, error: "FORBIDDEN_ORDER_INTENT_ACCESS" });
+    }
+
+    // Guardrail: if intent has control_plane.order_id or control_plane_order_id, return 409
+    const cpOrderId = intent.control_plane?.order_id || intent.control_plane_order_id;
+    if (cpOrderId) {
+        return res.status(409).json({
+            ok: false,
+            error: "USE_CP_INVOICE_PROXY",
+            cpOrderId,
+            message: "This order is governed by ControlPlane invoice/payment flow."
+        });
     }
 
     console.log(`[BILLING_CREATE_REQUEST] id=${order_intent_id} provider=${PAYMENT_PROVIDER}`);

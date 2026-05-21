@@ -55,6 +55,14 @@ module.exports = {
         return Object.values(index).find(oi => oi.public_ref === public_ref);
     },
 
+    async getByControlPlaneOrderId(cpOrderId) {
+        const index = loadIndex();
+        return Object.values(index).find(oi => 
+            (oi.control_plane && oi.control_plane.order_id === cpOrderId) ||
+            oi.control_plane_order_id === cpOrderId
+        );
+    },
+
     async listBySession(session_id) {
         const index = loadIndex();
         return Object.values(index).filter(oi => oi.session_id === session_id);

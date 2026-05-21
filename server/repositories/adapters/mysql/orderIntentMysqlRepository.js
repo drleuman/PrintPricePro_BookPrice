@@ -88,6 +88,14 @@ module.exports = {
         return mapFromDb(rows[0]);
     },
 
+    async getByControlPlaneOrderId(cpOrderId) {
+        const rows = await query(`
+            SELECT * FROM marketplace_order_intents 
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(COALESCE(control_plane_json, control_plane), '$.order_id')) = ?
+        `, [cpOrderId]);
+        return mapFromDb(rows[0]);
+    },
+
     async listBySession(session_id) {
         const rows = await query('SELECT * FROM marketplace_order_intents WHERE session_id = ?', [session_id]);
         return rows.map(mapFromDb);
