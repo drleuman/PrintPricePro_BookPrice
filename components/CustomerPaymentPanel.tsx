@@ -97,20 +97,25 @@ const CustomerPaymentPanel: React.FC<Props> = ({ cpOrderId, fetchDetails, onRefr
   };
 
   const paymentStatus = data?.payment?.status || data?.orderStatus;
-  const isPending = paymentStatus === 'PAYMENT_PENDING';
+  const isPending = data?.payment?.status === 'PAYMENT_PENDING';
   const isConfirmed = ['PAYMENT_CONFIRMED', 'PAID'].includes(paymentStatus || '');
   const isFailed = paymentStatus === 'PAYMENT_FAILED';
   const isBlocked = !data?.invoiceReady || (data?.blockers && data.blockers.length > 0);
+  const isTerminal = isConfirmed || isFailed || isBlocked;
 
-  // Trigger parent updates on confirmed status
-  const triggerParentRefreshes = useRef(false);
+  // Trigger parent updates on terminal status (exactly once per mounted panel/terminal transition)
+  const hasTriggeredTerminalRefresh = useRef(false);
   useEffect(() => {
-    if (isConfirmed && !triggerParentRefreshes.current) {
-      triggerParentRefreshes.current = true;
-      if (fetchDetails) fetchDetails();
-      if (onRefresh) onRefresh();
+    if (isTerminal) {
+      if (!hasTriggeredTerminalRefresh.current) {
+        hasTriggeredTerminalRefresh.current = true;
+        if (fetchDetails) fetchDetails();
+        if (onRefresh) onRefresh();
+      }
+    } else {
+      hasTriggeredTerminalRefresh.current = false;
     }
-  }, [isConfirmed, fetchDetails, onRefresh]);
+  }, [isTerminal, fetchDetails, onRefresh]);
 
   // Polling logic
   useEffect(() => {

@@ -43,8 +43,11 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDetails = async () => {
-    setLoading(true);
+  const fetchDetails = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch(`/api/order-intents/${orderIntentId}`);
@@ -66,7 +69,9 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
     } catch (err) {
       setError('Connection error. Please try again.');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -363,7 +368,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
 
                 <div className="mt-8">
                      {cpOrderId ? (
-                         <CustomerPaymentPanel cpOrderId={cpOrderId} fetchDetails={fetchDetails} />
+                         <CustomerPaymentPanel cpOrderId={cpOrderId} fetchDetails={() => fetchDetails({ silent: true })} />
                      ) : intent.preflight?.status !== 'PASSED' ? (
                         <div className="bg-corporate-primary/50 border border-white/5 p-4 text-center">
                             <p className="text-[0.65rem] text-corporate-muted italic">
