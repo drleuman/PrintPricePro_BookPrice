@@ -17,6 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { OrderIntent } from '../types';
 import OrderIntentPreflightPanel from './OrderIntentPreflightPanel';
+import CustomerPaymentPanel from './CustomerPaymentPanel';
 
 interface Props {
   orderIntentId: string;
@@ -133,6 +134,12 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
     country: normalizeText(snapshot?.specs?.delivery_country || rawSpecs?.delivery_country, ''),
     site: normalizeText(snapshot?.offer?.production_site || (intent.offer.selected_offer_snapshot as any)?.production_site || intent.offer.selected_offer_snapshot?.printer_name, 'Selected Printer')
   };
+
+  const cpOrderId = intent.control_plane?.order_id ||
+                    (intent as any).controlPlane?.orderId ||
+                    (intent as any).control_plane_order_id ||
+                    (intent as any).controlPlaneOrderId ||
+                    null;
 
   if (process.env.NODE_ENV === 'development') {
     console.debug('[ORDER_VIEW_HYDRATION]', {
@@ -338,7 +345,9 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                 </div>
 
                 <div className="mt-8">
-                     {intent.preflight?.status !== 'PASSED' ? (
+                     {cpOrderId ? (
+                         <CustomerPaymentPanel cpOrderId={cpOrderId} fetchDetails={fetchDetails} />
+                     ) : intent.preflight?.status !== 'PASSED' ? (
                         <div className="bg-corporate-primary/50 border border-white/5 p-4 text-center">
                             <p className="text-[0.65rem] text-corporate-muted italic">
                                 Invoice and payment will be available after files pass Preflight validation.

@@ -1732,6 +1732,45 @@ function sanitizeInvoicePaymentResponse(data) {
     return clean;
 }
 
+async function syncCPOrderPaymentStatus(cpOrderId, sanitized) {
+    const paymentStatus = sanitized?.payment?.status;
+    if (paymentStatus === 'PAYMENT_CONFIRMED') {
+        const intent = await repositories.orderIntents.getByControlPlaneOrderId(cpOrderId);
+        if (intent) {
+            let changed = false;
+            if (!intent.payment) {
+                intent.payment = { provider: 'bank_transfer', status: 'PAID' };
+                changed = true;
+            } else if (intent.payment.status !== 'PAID') {
+                intent.payment.status = 'PAID';
+                changed = true;
+            }
+            if (!intent.lifecycle) {
+                intent.lifecycle = { payment_status: 'PAID' };
+                changed = true;
+            } else if (intent.lifecycle.payment_status !== 'PAID') {
+                intent.lifecycle.payment_status = 'PAID';
+                changed = true;
+            }
+            
+            if (changed) {
+                intent.updated_at = new Date().toISOString();
+                await repositories.orderIntents.update(intent.order_intent_id, intent);
+                console.log(`[CP_PAYMENT_STATUS_SYNCED] cpOrderId=${cpOrderId} intent=${intent.order_intent_id} status=PAYMENT_CONFIRMED`);
+                
+                if (AUTO_FINALIZE_AFTER_PAYMENT) {
+                    console.log(`[AUTO_FINALIZE_AFTER_PAYMENT_TRIGGERED_SYNC] id=${intent.order_intent_id}`);
+                    try {
+                        await finalizeOrderIntent(intent.order_intent_id);
+                    } catch (e) {
+                        console.error(`[AUTO_FINALIZE_FAILED_SYNC] id=${intent.order_intent_id} error=${e.message}`);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // VERIFY CONTROL PLANE ORDER ACCESS
 async function verifyCPOrderAccess(req, res, cpOrderId) {
     const intent = await repositories.orderIntents.getByControlPlaneOrderId(cpOrderId);
@@ -1806,6 +1845,7 @@ app.get('/api/marketplace-order/:cpOrderId/invoice/status', async (req, res) => 
 
         const data = cpRes.data || {};
         const sanitized = sanitizeInvoicePaymentResponse(data);
+        await syncCPOrderPaymentStatus(cpOrderId, sanitized);
         
         // Returns sanitized: ok, orderId, orderStatus, invoiceReady, blockers, invoice, payment, readiness
         const responseData = {
@@ -1873,6 +1913,7 @@ app.get('/api/marketplace-order/:cpOrderId/payment/status', async (req, res) => 
 
         const data = cpRes.data || {};
         const sanitized = sanitizeInvoicePaymentResponse(data);
+        await syncCPOrderPaymentStatus(cpOrderId, sanitized);
 
         // Returns reduced shape: ok, orderId, orderStatus, invoiceReady, payment, invoiceNumber, amount, currency
         const invoiceNumber = sanitized.invoice?.invoiceNumber || 
@@ -2713,6 +2754,25 @@ app.post('/api/order-intents', async (req, res) => {
         ...snapshot.control_plane,
         payload: handoffPayload
     };
+
+    const cpOrderId = req.body.control_plane_order_id || 
+                      req.body.controlPlaneOrderId || 
+                      interior.controlPlaneOrderId || 
+                      cover.controlPlaneOrderId || 
+                      (interior.metadata && interior.metadata.controlPlaneOrderId) || 
+                      (cover.metadata && cover.metadata.controlPlaneOrderId) || 
+                      null;
+
+    if (cpOrderId) {
+        intentRecord.control_plane_order_id = cpOrderId;
+        intentRecord.control_plane.order_id = cpOrderId;
+        if (intentRecord.payload && intentRecord.payload.order_snapshot) {
+            if (!intentRecord.payload.order_snapshot.control_plane) {
+                intentRecord.payload.order_snapshot.control_plane = {};
+            }
+            intentRecord.payload.order_snapshot.control_plane.order_id = cpOrderId;
+        }
+    }
 
     await repositories.orderIntents.create(intentRecord);
     console.log(`[ORDER_INTENT_PERSISTED] id=${order_intent_id} status=${intentRecord.status} lifecycle=${intentRecord.lifecycle.quote_status}`);

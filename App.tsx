@@ -1051,7 +1051,8 @@ const App: React.FC = () => {
             name: user?.name,
             role: user?.role
           },
-          user_id: user?.user_id
+          user_id: user?.user_id,
+          control_plane_order_id: controlPlaneOrderId || undefined
         }),
       });
       if (!res.ok) {
