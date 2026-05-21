@@ -1735,6 +1735,39 @@ function sanitizeInvoicePaymentResponse(data) {
 // VERIFY CONTROL PLANE ORDER ACCESS
 async function verifyCPOrderAccess(req, res, cpOrderId) {
     const intent = await repositories.orderIntents.getByControlPlaneOrderId(cpOrderId);
+    
+    const smokeHeader = req.header('X-PPOS-Smoke-Access');
+    if (smokeHeader !== undefined) {
+        const isEnabled = process.env.PPOS_ENABLE_PHASE37_SMOKE_ACCESS === 'true';
+        
+        let tokenMatches = false;
+        const authHeader = req.header('Authorization') || '';
+        if (authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7).trim();
+            const allowedTokens = [
+                process.env.PPOS_CONTROL_TOKEN,
+                process.env.ADMIN_API_TOKEN,
+                process.env.CONTROL_PLANE_API_KEY
+            ].filter(Boolean);
+            
+            if (token && allowedTokens.includes(token)) {
+                tokenMatches = true;
+            }
+        }
+        
+        if (smokeHeader === 'phase37' && isEnabled && tokenMatches) {
+            console.log(`[PHASE37_SMOKE_ACCESS_GRANTED] cpOrderId=${cpOrderId} intent=${intent ? intent.order_intent_id : 'null'}`);
+            return true;
+        } else {
+            res.status(403).json({
+                ok: false,
+                error: 'ACCESS_DENIED',
+                message: 'You do not have access to this marketplace order.'
+            });
+            return false;
+        }
+    }
+
     if (!intent) {
         const identity = resolveRequestIdentity(req);
         if (!identity.isAdmin) {

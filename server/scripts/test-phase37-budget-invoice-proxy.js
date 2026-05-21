@@ -202,6 +202,7 @@ async function runTests() {
         PERSISTENCE_ADAPTER: 'json',
         CLEANUP_ENABLED: 'false',
         RATE_LIMIT_ENABLED: 'false',
+        PPOS_ENABLE_PHASE37_SMOKE_ACCESS: 'true',
         NODE_ENV: 'test'
     };
 
@@ -374,6 +375,37 @@ async function runTests() {
             throw new Error("Test 9 failed: Response missing expected legacy billing objects");
         }
         console.log("✅ Test 9 Passed: Legacy intent continues to use local billing flow unchanged.");
+
+        // Test 10: Normal request without access remains denied
+        console.log("\n[Test 10] GET /api/marketplace-order/:cpOrderId/invoice/status - Normal request without access (No Headers)");
+        const res10 = await client.get('/api/marketplace-order/cp_order_normal/invoice/status');
+        console.log(`Status: ${res10.status}`);
+        if (res10.status !== 403) throw new Error(`Test 10 failed: Status should be 403, got ${res10.status}`);
+        console.log("✅ Test 10 Passed: Normal request without access remains denied.");
+
+        // Test 11: Smoke header with valid bearer succeeds
+        console.log("\n[Test 11] GET /api/marketplace-order/:cpOrderId/invoice/status - Smoke header with valid bearer");
+        const res11 = await client.get('/api/marketplace-order/cp_order_normal/invoice/status', {
+            headers: {
+                'X-PPOS-Smoke-Access': 'phase37',
+                'Authorization': `Bearer ${CONTROL_TOKEN}`
+            }
+        });
+        console.log(`Status: ${res11.status}`);
+        if (res11.status !== 200) throw new Error(`Test 11 failed: Status should be 200, got ${res11.status}`);
+        console.log("✅ Test 11 Passed: Smoke header with valid bearer succeeds.");
+
+        // Test 12: Smoke header with invalid bearer is denied
+        console.log("\n[Test 12] GET /api/marketplace-order/:cpOrderId/invoice/status - Smoke header with invalid bearer");
+        const res12 = await client.get('/api/marketplace-order/cp_order_normal/invoice/status', {
+            headers: {
+                'X-PPOS-Smoke-Access': 'phase37',
+                'Authorization': `Bearer invalid_token`
+            }
+        });
+        console.log(`Status: ${res12.status}`);
+        if (res12.status !== 403) throw new Error(`Test 12 failed: Status should be 403, got ${res12.status}`);
+        console.log("✅ Test 12 Passed: Smoke header with invalid bearer is denied.");
 
         console.log("\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉");
     } catch (err) {
