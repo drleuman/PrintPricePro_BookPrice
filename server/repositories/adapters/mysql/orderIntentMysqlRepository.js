@@ -9,7 +9,7 @@ function mapFromDb(row) {
         cart_id: row.cart_id,
         user_id: row.user_id,
         status: row.status,
-        payload: typeof (row.payload || row.payload_json) === 'string' ? JSON.parse(row.payload || row.payload_json) : (row.payload || row.payload_json),
+        payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
         lifecycle: typeof (row.lifecycle || row.lifecycle_json) === 'string' ? JSON.parse(row.lifecycle || row.lifecycle_json) : (row.lifecycle || row.lifecycle_json),
         offer: typeof (row.offer || row.offer_json) === 'string' ? JSON.parse(row.offer || row.offer_json) : (row.offer || row.offer_json),
         production_files: typeof (row.production_files || row.production_files_json) === 'string' ? JSON.parse(row.production_files || row.production_files_json) : (row.production_files || row.production_files_json),
@@ -90,7 +90,23 @@ module.exports = {
 
     async getByControlPlaneOrderId(cpOrderId) {
         const rows = await query(`
-            SELECT * FROM marketplace_order_intents 
+            SELECT 
+                order_intent_id, public_ref, session_id, cart_id, user_id, status,
+                payload,
+                lifecycle, lifecycle_json,
+                offer, offer_json,
+                production_files, production_files_json,
+                customer, customer_json,
+                totals, totals_json,
+                preflight, preflight_json,
+                invoice, invoice_json,
+                payment, payment_json,
+                control_plane, control_plane_json,
+                printhouse_handoff, printhouse_handoff_json,
+                exception, exception_json,
+                production_files_history, production_files_history_json,
+                metadata_json, created_at, updated_at, cancelled_at, cancellation_reason
+            FROM marketplace_order_intents 
             WHERE JSON_UNQUOTE(JSON_EXTRACT(COALESCE(control_plane_json, control_plane), '$.order_id')) = ?
         `, [cpOrderId]);
         return mapFromDb(rows[0]);
@@ -119,11 +135,19 @@ module.exports = {
         jsonFields.forEach(key => {
             if (key in patch) {
                 const val = patch[key] === undefined ? null : JSON.stringify(patch[key]);
-                fields.push(`${key} = ?`);
-                params.push(val);
-                // Also update the _json version for compatibility
-                fields.push(`${key}_json = ?`);
-                params.push(val);
+                if (key === 'payload') {
+                    fields.push('payload = ?');
+                    params.push(val);
+                } else if (key === 'metadata') {
+                    fields.push('metadata_json = ?');
+                    params.push(val);
+                } else {
+                    fields.push(`${key} = ?`);
+                    params.push(val);
+                    // Also update the _json version for compatibility
+                    fields.push(`${key}_json = ?`);
+                    params.push(val);
+                }
             }
         });
         
