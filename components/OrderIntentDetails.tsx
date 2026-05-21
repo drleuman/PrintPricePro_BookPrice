@@ -25,6 +25,19 @@ interface Props {
   onReset?: () => void;
 }
 
+const getSelectedOfferSnapshot = (obj: any): any => {
+  if (!obj) return null;
+  return (
+    obj?.offer?.selected_offer_snapshot ||
+    obj?.offer?.selectedOfferSnapshot ||
+    obj?.selected_offer_snapshot ||
+    obj?.selectedOfferSnapshot ||
+    obj?.snapshot?.offer?.selected_offer_snapshot ||
+    obj?.payload?.order_snapshot?.offer?.selected_offer_snapshot ||
+    null
+  );
+};
+
 const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }) => {
   const [intent, setIntent] = useState<OrderIntent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,16 +136,17 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
 
   // Specs resolution with priority: payload > offer_snapshot > raw_specs
   const snapshot = intent.payload?.order_snapshot;
-  const rawSpecs = intent.offer.selected_offer_snapshot?.raw_offer_snapshot?.specs || (intent.offer.selected_offer_snapshot as any)?.specs || {};
+  const offerSnapshot = getSelectedOfferSnapshot(intent);
+  const rawSpecs = offerSnapshot?.raw_offer_snapshot?.specs || offerSnapshot?.specs || {};
   
   const specs = {
     format: normalizeText(snapshot?.specs?.format || rawSpecs?.book_size || rawSpecs?.format, 'Custom'),
     copies: normalizeNum(snapshot?.specs?.copies || rawSpecs?.copies, 0),
     pages: normalizeNum(snapshot?.specs?.interior_pages || rawSpecs?.interior_pages || snapshot?.specs?.total_pages, 0),
     binding: normalizeBinding(snapshot?.specs?.binding_method || rawSpecs?.binding_method),
-    printer: normalizeText(snapshot?.offer?.printer_name || intent.offer.selected_offer_snapshot?.printer_name, 'Unknown'),
+    printer: normalizeText(snapshot?.offer?.printer_name || offerSnapshot?.printer_name, 'Unknown'),
     country: normalizeText(snapshot?.specs?.delivery_country || rawSpecs?.delivery_country, ''),
-    site: normalizeText(snapshot?.offer?.production_site || (intent.offer.selected_offer_snapshot as any)?.production_site || intent.offer.selected_offer_snapshot?.printer_name, 'Selected Printer')
+    site: normalizeText(snapshot?.offer?.production_site || offerSnapshot?.production_site || offerSnapshot?.printer_name, 'Selected Printer')
   };
 
   const cpOrderId = intent.control_plane?.order_id ||
@@ -339,7 +353,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted">Production Site</span>
                         </div>
                         <span className="text-[0.7rem] font-bold text-corporate-text-secondary uppercase">
-                            {intent.offer.selected_offer_snapshot.printer_name}
+                            {offerSnapshot?.printer_name || '—'}
                         </span>
                     </div>
                 </div>
