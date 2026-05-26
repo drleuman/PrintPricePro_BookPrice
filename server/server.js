@@ -2198,10 +2198,7 @@ app.post('/api/budget/calculate', [
     body('interior_pages').isInt({ min: 0 }),
     body('delivery_country').isString().isLength({ min: 2, max: 2 })
 ], async (req, res) => {
-    console.log("[BUDGET_CALCULATE_HIT]", {
-        timestamp: new Date().toISOString(),
-        body: req.body
-    });
+    console.log('[BUDGET_CALCULATE_INCOMING_BODY]', JSON.stringify(req.body, null, 2));
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -2209,15 +2206,72 @@ app.post('/api/budget/calculate', [
     const sessionId = getOrCreateSessionId(req, res);
 
     try {
-        // In v5.2 this proxies to the actual BPE marketplace endpoint
         const bpeUrl = BPE_MARKETPLACE_OFFERS_URL;
         const headers = buildControlPlaneHeaders();
 
-        console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${req.body.delivery_country}`);
-        const response = await axios.post(bpeUrl, req.body, { headers, timeout: 10000 });
+        const bpePayload = {
+            copies: Number(req.body.copies),
+            interior_pages: Number(req.body.interior_pages),
+            delivery_country: String(req.body.delivery_country).toUpperCase().trim(),
+            book_size: req.body.book_size || 'A5',
+            cover_pages: Number(req.body.cover_pages ?? 4),
+            orientation: req.body.orientation || 'portrait',
+            interior_print: req.body.interior_print || '1/1',
+            cover_print: req.body.cover_print || '4/0',
+            paper_type_interior: req.body.paper_type_interior || 'offset',
+            paper_weight_interior: Number(req.body.paper_weight_interior ?? 135),
+            paper_type_cover: req.body.paper_type_cover || 'mc',
+            paper_weight_cover: Number(req.body.paper_weight_cover ?? 250),
+            binding_method: req.body.binding_method || 'perfect_bound',
+            finishing_options: req.body.finishing_options || '',
+            uv_varnish: req.body.uv_varnish === true,
+            endpapers: req.body.endpapers || 'none',
+            endpapers_print: req.body.endpapers_print || '',
+            custom_width: req.body.custom_width ? Number(req.body.custom_width) : undefined,
+            custom_height: req.body.custom_height ? Number(req.body.custom_height) : undefined
+        };
+
+        // Extra alias mapping as requested by contract
+        const payloadToBpe = {
+            ...bpePayload,
+            color_or_bw: req.body.color_or_bw || (bpePayload.interior_print === '4/4' ? 'color' : 'bw'),
+            binding_type: req.body.binding_type || bpePayload.binding_method,
+            paper_type: req.body.paper_type || bpePayload.paper_type_interior,
+            paper_weight: req.body.paper_weight || bpePayload.paper_weight_interior,
+            cover_paper_type: req.body.cover_paper_type || bpePayload.paper_type_cover,
+            cover_paper_weight: req.body.cover_paper_weight || bpePayload.paper_weight_cover,
+            laminate: req.body.laminate || bpePayload.finishing_options,
+            hardcover: req.body.hardcover !== undefined ? req.body.hardcover : (bpePayload.binding_method === 'thread_sewn_hc'),
+            production_country: req.body.production_country || '',
+            delivery_method: req.body.delivery_method || 'standard'
+        };
+
+        console.log('[BUDGET_CALCULATE_BPE_PAYLOAD]', JSON.stringify(bpePayload, null, 2));
+        console.log(`[BPE_PROXY_REQUEST] session=${sessionId} country=${bpePayload.delivery_country}`);
+        
+        const response = await axios.post(bpeUrl, payloadToBpe, { headers, timeout: 10000 });
 
         const bpeData = response.data;
         const offers = Array.isArray(bpeData.offers) ? bpeData.offers : [];
+
+        console.log('[BUDGET_CALCULATE_BPE_RESPONSE_SUMMARY]', {
+          offersCount: offers?.length,
+          prices: offers?.map(o => ({
+            printer_id: o.printer_id,
+            printer_name: o.printer_name || o.print_house || 'Print House',
+            total_price: o.suggested_price || o.production_cost || o.total_price || o.total_cost || o.price,
+            currency: o.currency
+          }))
+        });
+
+        // Detect BPE fallback pricing
+        const bpeParams = bpeData.params || {};
+        const isFallback = (bpeParams.copies && Number(bpeParams.copies) !== Number(bpePayload.copies)) ||
+                           (bpeParams.interior_pages && Number(bpeParams.interior_pages) !== Number(bpePayload.interior_pages)) ||
+                           offers.some(o => {
+                               const p = Number(o.suggested_price ?? o.production_cost ?? o.total_price ?? o.total_cost ?? o.price ?? o.total ?? 0);
+                               return [2607.2429, 2718.3, 2752.1571].some(fp => Math.abs(p - fp) < 0.01);
+                           });
 
         const offer_session_id = `ofs_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
         const expires_at = new Date(Date.now() + OFFER_SESSION_TTL_MINUTES * 60 * 1000).toISOString();
@@ -2225,22 +2279,25 @@ app.post('/api/budget/calculate', [
 
         const normalizedOffers = offers.map(o => {
             const offer_id = `offer_${crypto.randomBytes(6).toString('hex')}`;
+            const finalPrice = Number(o.suggested_price ?? o.production_cost ?? o.total_price ?? o.total_cost ?? o.price ?? o.total ?? 0);
             
             const offerForSigning = {
               offer_session_id,
               offer_id,
               printer_id: o.printer_id || o.printer || o.print_house || 'BPE_Engine',
-              printer_name: o.print_house || 'BPE Printer',
-              total_price: Number(o.total_price ?? o.total_cost ?? o.price ?? o.total ?? 0),
+              printer_name: o.printer_name || o.print_house || o.print_house_name || 'Print House',
+              print_house_name: o.print_house_name || o.printer_name || o.print_house || 'Print House',
+              total_price: finalPrice,
               currency: o.currency || 'EUR',
-              production_days: o.production_days || 0,
-              delivery_days: o.delivery_days || 0,
-              estimated_delivery_time: o.estimated_delivery_time || '',
+              production_days: o.production_lead_days || o.production_days || 0,
+              delivery_days: o.shipping_days || o.delivery_days || 0,
+              estimated_delivery_time: o.estimated_delivery_time || o.delivery_time || '',
               pricing_breakdown: o.breakdown || {},
               raw_offer_snapshot: o,
               expires_at,
               specs: normalizedSpecs,
-              specs_hash: stableHash(normalizedSpecs)
+              specs_hash: stableHash(normalizedSpecs),
+              source: isFallback ? "fallback" : (o.source || "BPE_MARKETPLACE_NATIVE")
             };
 
             offerForSigning.signature = signOfferPayload(offerForSigning);
@@ -2252,7 +2309,7 @@ app.post('/api/budget/calculate', [
             offer_session_id,
             session_id: sessionId,
             input_specs: req.body,
-            normalized_specs: req.body, // In a real app we might normalize them
+            normalized_specs: req.body,
             offers: normalizedOffers,
             expires_at,
             created_at: new Date().toISOString()
@@ -2264,8 +2321,6 @@ app.post('/api/budget/calculate', [
             expires_at,
             offers: normalizedOffers.map(({ raw_offer_snapshot, signature, ...rest }) => ({
                 ...rest,
-                // Don't leak raw snapshot or signature to frontend if not needed, 
-                // but requirements say signature optional on frontend.
                 signature
             })),
             recommended_offer_id: bpeData.recommended_offer_id

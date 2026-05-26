@@ -103,10 +103,14 @@ export function normaliseApiResponse(data: any): BookPriceResponse {
       print_house_id: raw.print_house_id,
 
       print_house:
+        raw.printer_name ||
         raw.print_house ||
         raw.print_house_name ||
         raw.name ||
         'Print house',
+
+      printer_name: raw.printer_name || raw.print_house || raw.print_house_name || raw.name || 'Print House',
+      print_house_name: raw.print_house_name || raw.printer_name || raw.print_house || raw.name || 'Print House',
 
       total_cost: totalCost,
       total_price: totalPrice,

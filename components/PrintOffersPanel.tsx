@@ -99,7 +99,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                 <div>
                   <div className="flex items-center gap-3 mb-2">
                     <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith">
-                      {offer.print_house}
+                      {offer.printer_name || offer.print_house_name || offer.printer_id || offer.print_house || "Print House"}
                     </p>
                     {isRecommended && (
                       <span className="bg-corporate-accent/10 text-corporate-accent text-[9px] font-technical font-black px-2 py-0.5 border border-corporate-accent/20 tracking-tighter">
