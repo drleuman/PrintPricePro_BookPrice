@@ -15,6 +15,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { body, validationResult } = require('express-validator');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
 // 🔴 BOOTSTRAP: FAIL-CLOSED MANDATORY VALIDATION (v5.2)
 const verifyEnvironment = () => {
@@ -30,7 +31,7 @@ verifyEnvironment();
 const app = express();
 const port = process.env.PORT || 3000;
 const externalApiBaseUrl = 'https://generativelanguage.googleapis.com';
-const bpeEstimatesUrl = 'https://bpe.printprice.pro/api/estimates';
+const bpeEstimatesUrl = process.env.BPE_MARKETPLACE_OFFERS_URL || process.env.BPE_ESTIMATES_URL || 'https://bpe.printprice.pro/api/estimates';
 const authLoginUrl = `${process.env.PREFLIGHT_URL || 'http://localhost:3000'}/api/auth/login`;
 const authRegisterUrl = `${process.env.PREFLIGHT_URL || 'http://localhost:3000'}/api/auth/register`;
 const controlPlaneOrdersUrl = `${process.env.CONTROL_PLANE_URL || 'http://localhost:8080'}/api/admin/orders`;
@@ -38,6 +39,34 @@ const controlPlaneApiKey = process.env.CONTROL_PLANE_API_KEY;
 const apiKey = process.env.GEMINI_API_KEY;
 const sessionSecret = process.env.SESSION_SECRET;
 const signingSecret = process.env.SIGNING_SECRET;
+
+// BPE JWT Auth configuration
+const BPE_JWT_SECRET = process.env.BPE_JWT_SECRET;
+const BPE_JWT_ISSUER = process.env.BPE_JWT_ISSUER || 'https://auth.printprice.pro';
+const BPE_JWT_AUDIENCE = process.env.BPE_JWT_AUDIENCE || 'ppos:control';
+const BPE_SYSTEM_USER_ID = process.env.PPOS_BPE_SYSTEM_USER_ID || 'bpe-system-user';
+
+const buildControlPlaneHeaders = () => {
+    if (!BPE_JWT_SECRET) {
+        throw new Error('[CONFIG_ERROR] BPE_JWT_SECRET is required');
+    }
+
+    const token = jwt.sign(
+        { sub: BPE_SYSTEM_USER_ID },
+        BPE_JWT_SECRET,
+        {
+            issuer: BPE_JWT_ISSUER,
+            audience: BPE_JWT_AUDIENCE,
+            expiresIn: 60
+        }
+    );
+
+    return {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "x-source-app": "PrintPricePro_BookPrice"
+    };
+};
 
 app.set('trust proxy', 1); // For Cloudflare headers
 
@@ -223,7 +252,8 @@ app.post('/api/budget/calculate', calcLimiter, async (req, res) => {
         if (delay > 0) await new Promise(r => setTimeout(r, delay));
 
         vault.trackStart();
-        const response = await axios.post(bpeEstimatesUrl, cleanPayload, { timeout: 15000 });
+        const headers = buildControlPlaneHeaders();
+        const response = await axios.post(bpeEstimatesUrl, cleanPayload, { headers, timeout: 15000 });
         vault.trackEnd();
 
         // 3. ADAPTIVE RESPONSE DEGRADATION (Layer 5)
