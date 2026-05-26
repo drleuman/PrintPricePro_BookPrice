@@ -207,7 +207,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
                 <p className="text-[0.7rem] font-technical font-black text-corporate-muted uppercase tracking-monolith">
                   No orders yet
                 </p>
-                <p className="text-[0.6rem] text-corporate-muted uppercase tracking-[0.2em] font-mono">
+                <p className="text-[0.6rem] text-corporate-muted uppercase tracking-[0.2em] font-technical">
                   Your order history will appear here.
                 </p>
               </div>
@@ -243,12 +243,12 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
                   style={{ gridTemplateColumns: '1.5fr 0.6fr 0.8fr 1.5fr 1fr 1fr 1fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr' }}
                 >
                   <div className="flex flex-col truncate">
-                    <span className="font-mono font-bold text-[0.7rem] text-corporate-text tracking-tight truncate flex items-center gap-2">
+                    <span className="font-technical font-bold text-[0.7rem] text-corporate-text tracking-tight truncate flex items-center gap-2">
                         {order.order_ref}
                         <MagnifyingGlassIcon className="w-3 h-3 text-corporate-muted opacity-0 group-hover:opacity-100 transition-opacity" />
                     </span>
                     {(order as any).control_plane?.order_ref && (
-                        <span className="text-[0.5rem] font-mono text-corporate-accent truncate">CP: {(order as any).control_plane.order_ref}</span>
+                        <span className="text-[0.5rem] font-technical text-corporate-accent truncate">CP: {(order as any).control_plane.order_ref}</span>
                     )}
                   </div>
                   <span className="font-technical text-[0.65rem] text-corporate-text-secondary tabular-nums">
@@ -260,7 +260,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
                   <span className="font-technical text-[0.65rem] text-corporate-muted truncate">
                     {order.offer_print_house}
                   </span>
-                  <span className="font-mono font-bold text-[0.7rem] text-corporate-text tabular-nums text-right">
+                  <span className="font-technical font-bold text-[0.7rem] text-corporate-text tabular-nums text-right">
                     {order.currency || '$'} {Number(order.offer_price).toFixed(2)}
                   </span>
                   <span className="font-technical text-[0.65rem] text-corporate-muted tabular-nums">
@@ -331,7 +331,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
         {/* Footer */}
         <div className="shrink-0 px-8 py-4 border-t border-white/5 bg-corporate-primary flex items-center justify-between gap-4">
           {/* Left: record count */}
-          <span className="text-[0.6rem] font-mono text-corporate-muted uppercase tracking-widest w-20 shrink-0">
+          <span className="text-[0.6rem] font-technical text-corporate-muted uppercase tracking-widest w-20 shrink-0">
             {!loading && !error && orders.length > 0
               ? `${orders.length} order${orders.length !== 1 ? 's' : ''}`
               : ''}
@@ -358,7 +358,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ userId, onClose }) => {
                     key={page}
                     type="button"
                     onClick={() => setCurrentPage(page)}
-                    className={`w-5 h-5 text-[0.55rem] font-mono font-bold transition-colors ${
+                    className={`w-5 h-5 text-[0.55rem] font-technical font-bold transition-colors ${
                       page === currentPage
                         ? 'bg-corporate-accent text-white'
                         : 'text-corporate-muted hover:text-corporate-text'

@@ -304,7 +304,7 @@ const CustomerPaymentPanel: React.FC<Props> = ({ cpOrderId, fetchDetails, onRefr
               <span className="text-[0.7rem] font-black uppercase tracking-widest text-corporate-text">Bank Transfer Instructions</span>
             </div>
             
-            <div className="space-y-2 text-[0.65rem] font-mono">
+            <div className="space-y-2 text-[0.65rem] font-technical">
               <div className="flex justify-between border-b border-white/5 pb-1">
                 <span className="text-corporate-muted">Beneficiary</span>
                 <span className="text-corporate-text text-right text-white font-bold">
@@ -382,7 +382,7 @@ const CustomerPaymentPanel: React.FC<Props> = ({ cpOrderId, fetchDetails, onRefr
               Your payment has been successfully recorded on the ControlPlane and synchronized locally. The order intent is now unlocked and has been submitted to the production queue.
             </p>
             {data.invoice && (
-              <div className="mt-3 pt-3 border-t border-white/5 flex justify-between text-[0.6rem] font-mono text-corporate-muted">
+              <div className="mt-3 pt-3 border-t border-white/5 flex justify-between text-[0.6rem] font-technical text-corporate-muted">
                 <span>Invoice: {data.invoice.invoiceNumber || data.invoice.invoice_number || 'N/A'}</span>
                 <span>Amount: {data.invoice.currency || 'EUR'} {(data.invoice.amount ?? 0).toFixed(2)}</span>
               </div>

@@ -271,7 +271,7 @@ export const CustomerRemediationPage: React.FC<CustomerRemediationPageProps> = (
             Action Required: Fix Order Layout
           </h1>
           <p className="text-xs text-corporate-text-secondary mt-1">
-            Order Reference: <span className="font-mono text-corporate-text">{orderId}</span>
+            Order Reference: <span className="font-technical text-corporate-text">{orderId}</span>
           </p>
         </div>
         
@@ -392,7 +392,7 @@ export const CustomerRemediationPage: React.FC<CustomerRemediationPageProps> = (
                     <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
                     <span className="truncate text-corporate-text">{up.metadata.originalName}</span>
                   </div>
-                  <span className="text-[10px] font-mono text-corporate-muted shrink-0 ml-4">
+                  <span className="text-[10px] font-technical text-corporate-muted shrink-0 ml-4">
                     {(up.metadata.sizeBytes / 1024 / 1024).toFixed(2)} MB
                   </span>
                 </div>

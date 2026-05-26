@@ -198,7 +198,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                 
                 <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[0.55rem] font-technical uppercase text-corporate-muted tracking-[0.2em]">Order Intent</span>
-                    <span className="text-[0.7rem] md:text-[0.8rem] font-mono font-bold text-corporate-accent tracking-tighter tabular-nums select-all">
+                    <span className="text-[0.7rem] md:text-[0.8rem] font-technical font-bold text-corporate-accent tracking-tighter tabular-nums select-all">
                         {intent.public_ref}
                     </span>
                 </div>
@@ -227,7 +227,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                     <h2 className="text-[1.1rem] font-black uppercase tracking-[0.2em] text-corporate-text">
                         Order Details
                     </h2>
-                    <p className="text-[0.65rem] font-mono text-corporate-muted uppercase">
+                    <p className="text-[0.65rem] font-technical text-corporate-muted uppercase">
                         Ingestion ID: {intent.order_intent_id}
                     </p>
                 </div>
@@ -325,21 +325,21 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                 <div className="space-y-3 mb-6">
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Subtotal</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.total_price ?? 0).toFixed(2)}</span>
+                        <span className="text-corporate-text font-technical tabular-nums">{displayCurrency} {(intent.totals?.total_price ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Shipping</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.shipping_amount ?? 0).toFixed(2)}</span>
+                        <span className="text-corporate-text font-technical tabular-nums">{displayCurrency} {(intent.totals?.shipping_amount ?? 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-[0.75rem]">
                         <span className="text-corporate-muted uppercase tracking-tight font-technical">Tax (VAT)</span>
-                        <span className="text-corporate-text font-mono tabular-nums">{displayCurrency} {(intent.totals?.tax_amount ?? 0).toFixed(2)}</span>
+                        <span className="text-corporate-text font-technical tabular-nums">{displayCurrency} {(intent.totals?.tax_amount ?? 0).toFixed(2)}</span>
                     </div>
                 </div>
 
                 <div className="pt-4 border-t border-corporate-accent/20 flex justify-between items-center mb-8">
                      <span className="text-[0.8rem] font-black uppercase tracking-widest text-corporate-text">Total</span>
-                     <span className="text-[1.2rem] font-mono font-black text-corporate-accent tabular-nums">
+                     <span className="text-[1.2rem] font-technical font-black text-corporate-accent tabular-nums">
                         {displayCurrency} {(intent.totals?.grand_total ?? 0).toFixed(2)}
                      </span>
                 </div>
@@ -350,7 +350,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <CalendarIcon className="w-3.5 h-3.5 text-corporate-muted" />
                             <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted">Created At</span>
                         </div>
-                        <span className="text-[0.7rem] font-mono text-corporate-text-secondary">
+                        <span className="text-[0.7rem] font-technical text-corporate-text-secondary">
                             {intent.created_at ? new Date(intent.created_at).toLocaleString() : '—'}
                         </span>
                     </div>
@@ -414,7 +414,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                         <span className="text-[0.7rem] font-black uppercase tracking-widest text-corporate-text">Bank Transfer Instructions</span>
                                     </div>
                                     
-                                    <div className="space-y-2 text-[0.65rem] font-mono">
+                                    <div className="space-y-2 text-[0.65rem] font-technical">
                                         <div className="flex justify-between border-b border-white/5 pb-1">
                                             <span className="text-corporate-muted">Account</span>
                                             <span className="text-corporate-text text-right">{intent.payment?.instructions?.account_name || '—'}</span>
@@ -481,7 +481,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                             <div className="space-y-3">
                                 <div>
                                     <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted block mb-1">Control Plane Ref</span>
-                                    <span className="text-[0.8rem] font-mono font-black text-corporate-text">{intent.control_plane?.order_ref || '—'}</span>
+                                    <span className="text-[0.8rem] font-technical font-black text-corporate-text">{intent.control_plane?.order_ref || '—'}</span>
                                 </div>
                                 <div className="flex justify-between items-end">
                                     <div>
@@ -579,13 +579,13 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                                     <DocumentCheckIcon className="w-5 h-5 text-corporate-accent" />
                                     <span className="text-[0.75rem] font-black uppercase tracking-widest text-corporate-accent">Package Ready</span>
                                 </div>
-                                <span className="text-[0.6rem] font-mono text-corporate-muted">#{intent.dispatch_package_id ? intent.dispatch_package_id.slice(-8).toUpperCase() : '—'}</span>
+                                <span className="text-[0.6rem] font-technical text-corporate-muted">#{intent.dispatch_package_id ? intent.dispatch_package_id.slice(-8).toUpperCase() : '—'}</span>
                             </div>
                             
                             <div className="space-y-3">
                                 <div>
                                     <span className="text-[0.6rem] font-technical uppercase tracking-widest text-corporate-muted block mb-1">Package ID</span>
-                                    <span className="text-[0.8rem] font-mono font-black text-corporate-text select-all">{intent.dispatch_package_id}</span>
+                                    <span className="text-[0.8rem] font-technical font-black text-corporate-text select-all">{intent.dispatch_package_id}</span>
                                 </div>
                                 <div className="flex justify-between items-end pt-2 border-t border-white/5">
                                     <div>
@@ -613,7 +613,7 @@ const OrderIntentDetails: React.FC<Props> = ({ orderIntentId, onClose, onReset }
                  <h4 className="text-[0.65rem] font-black uppercase tracking-widest text-corporate-muted mb-4">
                     Audit Metadata
                 </h4>
-                <div className="space-y-2 font-mono text-[0.6rem] text-corporate-muted">
+                <div className="space-y-2 font-technical text-[0.6rem] text-corporate-muted">
                     <p>SESSION_ID: {intent.session_id ? intent.session_id.slice(0, 12) + '...' : '—'}</p>
                     <p>CONTRACT: BPE_MARKETPLACE_NATIVE</p>
                     <p>VERSION: v5.3_PHASE_11</p>

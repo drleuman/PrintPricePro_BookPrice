@@ -175,7 +175,7 @@ export const PrinthouseQueue: React.FC = () => {
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-bold text-slate-800">{job.public_ref}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{job.package_id}</span>
+                      <span className="text-[10px] text-slate-400 font-technical">{job.package_id}</span>
                       {job.control_plane_order_ref && (
                         <span className="text-[10px] text-blue-600 font-medium">CP: {job.control_plane_order_ref}</span>
                       )}

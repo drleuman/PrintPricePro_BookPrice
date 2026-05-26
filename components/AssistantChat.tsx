@@ -463,7 +463,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
         </div>
         <div className="bg-corporate-primary/50 pl-10 pr-6 py-6 flex items-center justify-between border-b border-white/5 relative z-10">
           <div>
-            <h2 className="text-xs font-technical font-black tracking-monolith text-corporate-text uppercase">
+            <h2 className="text-xs font-sans font-black tracking-monolith text-corporate-text uppercase">
               AI Assistant
             </h2>
             <p className="text-[10px] text-corporate-muted font-technical uppercase tracking-widest mt-2">
@@ -498,7 +498,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               >
                 {m.content.includes('Project Summary') ? (
                   <div className="space-y-6">
-                    <p className="text-xs font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4 mb-4">
+                    <p className="text-xs font-sans font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4 mb-4">
                       {t('project_summary_title') || 'Project Summary'}
                     </p>
                     <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
@@ -515,7 +515,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                   </div>
                 ) : m.kind === 'offers' ? (
                   <div className="space-y-6 min-w-[300px]">
-                    <p className="text-[0.6rem] font-technical font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4">
+                    <p className="text-[0.6rem] font-sans font-black text-corporate-accent uppercase tracking-monolith border-b border-corporate-accent/20 pb-4">
                       {t('recommended_offers') || 'Recommended Offers'}
                     </p>
                     <div className="space-y-3">
@@ -559,7 +559,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                               <div className="flex justify-between items-center gap-4 relative z-10">
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith">
+                                    <p className="text-xs font-sans font-black text-corporate-text uppercase tracking-monolith">
                                       {offer.print_house}
                                     </p>
                                     {isRecommended && (
@@ -614,7 +614,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                                     onChooseOffer(offer); 
                                   }}
                                   disabled={isSelected || offer.checkout_allowed === false}
-                                  className={`inline-flex items-center px-6 py-2 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300 shrink-0
+                                  className={`inline-flex items-center px-6 py-2 text-xs font-sans font-black tracking-monolith uppercase transition-all duration-300 shrink-0
                                     ${isSelected
                                       ? 'bg-corporate-accent/20 border border-corporate-accent/40 text-corporate-accent cursor-default'
                                       : offer.checkout_allowed === false
@@ -640,7 +640,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="font-technical text-[13px] leading-relaxed tracking-wide whitespace-pre-line">{m.content}</div>
+                  <div className="font-sans text-[13px] leading-relaxed tracking-wide whitespace-pre-line">{m.content}</div>
                 )}
               </div>
             </div>
@@ -668,7 +668,7 @@ const AssistantChat: React.FC<AssistantChatProps> = ({
               }
             }}
             placeholder="Describe system_project requirements..."
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-corporate-text placeholder-corporate-muted font-technical tracking-wide"
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 text-corporate-text placeholder-corporate-muted font-sans tracking-wide"
           />
           <button
             type="button"

@@ -328,7 +328,7 @@ const AuthModal: React.FC<{ onClose: () => void; onLoginSuccess: (user: AuthUser
         {/* Secure footer */}
         <div className="px-8 py-4 mt-5 bg-corporate-primary border-t border-[var(--border-subtle)] flex items-center justify-center gap-3">
           <ShieldCheckIcon className="h-3 w-3 text-[#32D74B]" />
-          <span className="text-[0.6rem] font-mono text-corporate-muted tracking-widest uppercase">
+          <span className="text-[0.6rem] font-technical text-corporate-muted tracking-widest uppercase">
             Secure encrypted connection
           </span>
         </div>
@@ -456,7 +456,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onOpenModal, onLogout }) => {
                 {user ? (user.name || user.email) : 'Not signed in'}
               </div>
               {user && (
-                <div className="mt-0.5 text-[0.65rem] font-mono text-corporate-muted truncate">
+                <div className="mt-0.5 text-[0.65rem] font-technical text-corporate-muted truncate">
                   {user.email}
                 </div>
               )}

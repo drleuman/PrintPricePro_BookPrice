@@ -101,7 +101,7 @@ const PdfUploadDropzone: React.FC<PdfUploadDropzoneProps> = ({ onFileSelect, loa
       ) : (
         <div className="flex flex-col items-center justify-center py-6">
           <ArrowUpTrayIcon className="h-10 w-10 text-corporate-accent/40 group-hover:text-corporate-accent transition-colors duration-300" />
-          <p className="mt-6 text-[0.6rem] font-technical font-black tracking-monolith text-corporate-text-secondary uppercase group-hover:text-white transition-colors duration-300">{t('upload_pdf_instructions')}</p>
+          <p className="mt-6 text-[0.6rem] font-sans font-black tracking-monolith text-corporate-text-secondary uppercase group-hover:text-white transition-colors duration-300">{t('upload_pdf_instructions')}</p>
           <p className="mt-2 text-[0.5rem] font-technical text-corporate-muted uppercase tracking-widest leading-none">Accepted node: application/pdf</p>
         </div>
       )}

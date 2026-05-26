@@ -167,7 +167,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
       <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[8rem] font-black pointer-events-none uppercase">
         SPEC
       </div>
-      <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
+      <h2 className="text-[0.7rem] font-sans font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
         <WrenchIcon className="w-5 h-5" />
         {t('book_specifications_label') || 'Book specifications'}
       </h2>
@@ -176,14 +176,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
         {/* Section: General */}
         <div className="space-y-6">
           <div className="flex items-center gap-6">
-            <h3 className="text-[10px] font-technical font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
+            <h3 className="text-[10px] font-sans font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
               {t('section_general')}
             </h3>
             <div className="h-[1px] w-full bg-white/5" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <UserGroupIcon className="w-4 h-4 text-corporate-accent" />
                 {t('copies_label')}
               </label>
@@ -201,7 +201,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <GlobeEuropeAfricaIcon className="w-4 h-4 text-corporate-accent" />
                 {t('delivery_country_label')}
               </label>
@@ -223,7 +223,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <Square3Stack3DIcon className="w-4 h-4 text-corporate-accent" />
                 {t('book_size_label')}
               </label>
@@ -248,13 +248,13 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
           {/* Custom Dimensions Section */}
           {payload.book_size === 'Custom' && (
             <div className="bg-corporate-primary/30 border border-corporate-accent/20 p-10 mt-10 animate-slideDown">
-              <span className="text-[10px] font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-3 mb-6">
+              <span className="text-[10px] font-sans font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-3 mb-6">
                 <ArrowsPointingOutIcon className="w-4 h-4" />
                 Custom Dimensions
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="flex flex-col">
-                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
+                  <label className="font-sans font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
                     Width
                   </label>
                   <div className="relative">
@@ -276,7 +276,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
                 </div>
 
                 <div className="flex flex-col">
-                  <label className="font-technical font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
+                  <label className="font-sans font-bold text-corporate-muted mb-2 uppercase tracking-technical text-[10px]">
                     Height
                   </label>
                   <div className="relative">
@@ -318,7 +318,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
                 {t('interior_pages_label')}
               </label>
@@ -343,7 +343,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <BookOpenIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_pages_label')}
               </label>
@@ -365,7 +365,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <ArrowsPointingOutIcon className="w-4 h-4 text-corporate-accent" />
                 {t('orientation_label')}
               </label>
@@ -391,14 +391,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
         {/* Section: Interior */}
         <div className="space-y-6">
           <div className="flex items-center gap-4">
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+            <h3 className="text-[10px] font-sans font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
               {t('section_interior')}
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                 {t('interior_print_label')}
               </label>
@@ -420,7 +420,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <CogIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_type_interior_label')}
               </label>
@@ -442,7 +442,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_weight_interior_label')}
               </label>
@@ -464,7 +464,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <SwatchIcon className="w-4 h-4 text-corporate-accent" />
                 {t('pms_interior_label')}
               </label>
@@ -490,14 +490,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
         {/* Section: Cover */}
         <div className="space-y-6">
           <div className="flex items-center gap-4">
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+            <h3 className="text-[10px] font-sans font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
               {t('section_cover')}
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_print_label')}
               </label>
@@ -519,7 +519,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <BeakerIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_type_cover_label')}
               </label>
@@ -541,7 +541,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                 {t('paper_weight_cover_label')}
               </label>
@@ -563,7 +563,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <SwatchIcon className="w-4 h-4 text-corporate-accent" />
                 {t('pms_cover_label')}
               </label>
@@ -586,7 +586,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <AdjustmentsHorizontalIcon className="w-4 h-4 text-corporate-accent" />
                 {t('cover_print_rev_label')}
               </label>
@@ -612,14 +612,14 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
         {/* Section: Binding & Finishing */}
         <div className="space-y-6">
           <div className="flex items-center gap-4">
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+            <h3 className="text-[10px] font-sans font-bold text-corporate-muted uppercase tracking-monolith whitespace-nowrap">
               {t('section_binding')}
             </h3>
             <div className="h-px w-full bg-gray-100" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <TrophyIcon className="w-4 h-4 text-corporate-accent" />
                 {t('binding_method_label')}
               </label>
@@ -641,7 +641,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <SparklesIcon className="w-4 h-4 text-corporate-accent" />
                 {t('finishing_options_label')}
               </label>
@@ -663,7 +663,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+              <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                 <SunIcon className="w-4 h-4 text-corporate-accent" />
                 {t('uv_varnish_label')}
               </label>
@@ -693,13 +693,13 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
             <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[4rem] font-black pointer-events-none uppercase">
               PREM
             </div>
-            <h3 className="text-[10px] font-technical font-black text-corporate-accent mb-8 uppercase tracking-monolith flex items-center gap-4 relative z-10">
+            <h3 className="text-[10px] font-sans font-black text-corporate-accent mb-8 uppercase tracking-monolith flex items-center gap-4 relative z-10">
               <WrenchIcon className="w-4 h-4" />
               Hardcover Premium Options
             </h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-10 relative z-10">
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                   <DocumentTextIcon className="w-4 h-4 text-corporate-accent" />
                   {t('endpapers_label')}
                 </label>
@@ -721,7 +721,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                   <PaintBrushIcon className="w-4 h-4 text-corporate-accent" />
                   {t('endpapers_print_label')}
                 </label>
@@ -744,7 +744,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                   <CogIcon className="w-4 h-4 text-corporate-accent" />
                   {t('paper_type_endpaper_label')}
                 </label>
@@ -766,7 +766,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
               </div>
 
               <div className="flex flex-col">
-                <label className="flex items-center gap-2 font-technical font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
+                <label className="flex items-center gap-2 font-sans font-bold text-corporate-text-secondary mb-4 uppercase tracking-technical text-[10px]">
                   <ScaleIcon className="w-4 h-4 text-corporate-accent" />
                   {t('paper_weight_endpapers_label')}
                 </label>
@@ -798,7 +798,7 @@ const BookPriceForm: React.FC<BookPriceFormProps> = ({
           type="button"
           onClick={handleCalculatePrice}
           disabled={loading}
-          className="inline-flex items-center bg-corporate-accent px-12 py-5 text-[0.7rem] font-technical font-black text-white uppercase tracking-monolith transition-all duration-300 hover:bg-corporate-hover hover:shadow-[0_10px_30px_rgba(220,0,0,0.3)] disabled:opacity-50 relative group overflow-hidden"
+          className="inline-flex items-center bg-corporate-accent px-12 py-5 text-[0.7rem] font-sans font-black text-white uppercase tracking-monolith transition-all duration-300 hover:bg-corporate-hover hover:shadow-[0_10px_30px_rgba(220,0,0,0.3)] disabled:opacity-50 relative group overflow-hidden"
         >
           <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
           {loading ? (

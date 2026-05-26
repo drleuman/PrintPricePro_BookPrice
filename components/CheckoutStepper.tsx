@@ -24,7 +24,7 @@ const CheckoutStepper: React.FC<CheckoutStepperProps> = ({ currentStep }) => {
           <React.Fragment key={step.key}>
             <div className="flex flex-col items-center relative z-10">
               <div 
-                className={`w-10 h-10 flex items-center justify-center text-[11px] font-technical font-black transition-all duration-500 border-2 ${
+                className={`w-10 h-10 flex items-center justify-center text-[11px] font-sans font-black transition-all duration-500 border-2 ${
                   isActive ? 'bg-corporate-accent border-corporate-accent text-white shadow-[0_0_25px_rgba(220,0,0,0.4)] scale-110' : 
                   isPast ? 'bg-corporate-text border-corporate-text text-corporate-primary' : 
                   'bg-corporate-secondary border-white/10 text-corporate-muted'
@@ -33,7 +33,7 @@ const CheckoutStepper: React.FC<CheckoutStepperProps> = ({ currentStep }) => {
                 {isPast ? '✓' : idx + 1}
               </div>
               <div className="absolute -bottom-6 whitespace-nowrap">
-                <span className={`text-[8px] font-technical font-black tracking-monolith uppercase transition-colors duration-500 ${
+                <span className={`text-[8px] font-sans font-black tracking-monolith uppercase transition-colors duration-500 ${
                   isActive ? 'text-corporate-accent' : 
                   isPast ? 'text-corporate-text' : 
                   'text-corporate-muted'

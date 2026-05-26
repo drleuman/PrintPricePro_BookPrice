@@ -31,7 +31,7 @@ const PreflightJobItem: React.FC<{ job: PreflightJob }> = ({ job }) => {
             <p className="text-[0.6rem] font-technical font-black uppercase tracking-monolith text-corporate-muted">
               {job.role.replace('_', ' ')}
             </p>
-            <p className="text-[0.7rem] font-mono font-bold text-corporate-text truncate max-w-[120px]" title={job.file_id}>
+            <p className="text-[0.7rem] font-technical font-bold text-corporate-text truncate max-w-[120px]" title={job.file_id}>
               {job.file_id.split('_').pop()}
             </p>
           </div>

@@ -96,7 +96,7 @@ export const PrinthouseJobDetail: React.FC<PrinthouseJobDetailProps> = ({ packag
       <div className="bg-white rounded-xl h-full flex items-center justify-center p-12">
         <div className="flex flex-col items-center gap-3">
           <Settings className="w-8 h-8 text-blue-500 animate-spin" />
-          <span className="text-slate-500 font-medium font-mono text-sm">LOADING_JOB_METADATA...</span>
+          <span className="text-slate-500 font-medium font-technical text-sm">LOADING_JOB_METADATA...</span>
         </div>
       </div>
     );
@@ -137,7 +137,7 @@ export const PrinthouseJobDetail: React.FC<PrinthouseJobDetailProps> = ({ packag
           <div>
             <h2 className="text-lg font-bold text-slate-800 leading-tight">Job #{job.public_ref}</h2>
             <div className="flex items-center gap-2">
-               <span className="text-[10px] font-mono text-slate-400">{job.package_id}</span>
+               <span className="text-[10px] font-technical text-slate-400">{job.package_id}</span>
                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded uppercase">
                  {job.printhouse_name}
                </span>
@@ -162,7 +162,7 @@ export const PrinthouseJobDetail: React.FC<PrinthouseJobDetailProps> = ({ packag
            </div>
            <div className="text-right">
               <span className="text-[10px] text-slate-400 block font-medium">Last Update</span>
-              <span className="text-xs font-mono">{new Date(job.production_queue?.updated_at || job.updated_at).toLocaleString()}</span>
+              <span className="text-xs font-technical">{new Date(job.production_queue?.updated_at || job.updated_at).toLocaleString()}</span>
            </div>
         </div>
 

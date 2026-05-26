@@ -74,7 +74,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
       <div className="absolute top-0 right-0 opacity-[0.02] font-technical text-[8rem] font-black pointer-events-none uppercase">
         PR_H
       </div>
-      <h2 className="text-[0.7rem] font-technical font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
+      <h2 className="text-[0.7rem] font-sans font-black tracking-monolith text-corporate-accent mb-12 flex items-center gap-4 uppercase relative z-10">
         Best print offers
       </h2>
 
@@ -98,7 +98,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
               <div className="flex justify-between items-start gap-6 relative z-10">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <p className="text-xs font-technical font-black text-corporate-text uppercase tracking-monolith">
+                    <p className="text-xs font-sans font-black text-corporate-text uppercase tracking-monolith">
                       {offer.printer_name || offer.print_house_name || offer.printer_id || offer.print_house || "Print House"}
                     </p>
                     {isRecommended && (
@@ -154,7 +154,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => handleToggleBreakdown(offer.id)}
-                    className="text-xs font-technical font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-2 hover:text-corporate-text transition-colors"
+                    className="text-xs font-sans font-black text-corporate-accent uppercase tracking-monolith flex items-center gap-2 hover:text-corporate-text transition-colors"
                   >
                     {isOpen ? 'Close system_breakdown [-]' : 'View system_breakdown [+]'}
                   </button>
@@ -181,7 +181,7 @@ const PrintOffersPanel: React.FC<PrintOffersPanelProps> = ({
                   type="button"
                   disabled={offer.checkout_allowed === false}
                   onClick={() => onChooseOffer(offer)}
-                  className={`inline-flex items-center px-8 py-3 text-xs font-technical font-black tracking-monolith uppercase transition-all duration-300
+                  className={`inline-flex items-center px-8 py-3 text-xs font-sans font-black tracking-monolith uppercase transition-all duration-300
                     ${isSelected
                       ? 'bg-corporate-accent/20 border border-corporate-accent/40 text-corporate-accent cursor-default'
                       : offer.checkout_allowed === false

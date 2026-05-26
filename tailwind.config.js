@@ -22,7 +22,7 @@ export default {
             fontFamily: {
                 display: ['Manrope', 'sans-serif'],
                 technical: ['Space Grotesk', 'monospace'],
-                sans: ['Inter', 'sans-serif'],
+                sans: ['Manrope', 'sans-serif'],
             },
             letterSpacing: {
                 'monolith': '0.2em',
