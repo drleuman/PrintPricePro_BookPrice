@@ -12,6 +12,7 @@ const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 
 // ---- Persistence & Repositories (v5.3 - Phase 10A Hardening) ----
 const repositories = require('./repositories');
@@ -77,11 +78,33 @@ const BPE_MARKETPLACE_OFFERS_URL =
     process.env.BPE_MARKETPLACE_OFFERS_URL ||
     `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
 
-const buildControlPlaneHeaders = () => ({
-    "Authorization": `Bearer ${CONTROL_PLANE_API_KEY}`,
-    "Content-Type": "application/json",
-    "x-source-app": "PrintPricePro_BookPrice"
-});
+// BPE JWT Auth configuration
+const BPE_JWT_SECRET = process.env.BPE_JWT_SECRET;
+const BPE_JWT_ISSUER = process.env.BPE_JWT_ISSUER || 'https://auth.printprice.pro';
+const BPE_JWT_AUDIENCE = process.env.BPE_JWT_AUDIENCE || 'ppos:control';
+const BPE_SYSTEM_USER_ID = process.env.PPOS_BPE_SYSTEM_USER_ID || 'bpe-system-user';
+
+const buildControlPlaneHeaders = () => {
+    if (!BPE_JWT_SECRET) {
+        throw new Error('[CONFIG_ERROR] BPE_JWT_SECRET is required');
+    }
+
+    const token = jwt.sign(
+        { sub: BPE_SYSTEM_USER_ID },
+        BPE_JWT_SECRET,
+        {
+            issuer: BPE_JWT_ISSUER,
+            audience: BPE_JWT_AUDIENCE,
+            expiresIn: 60
+        }
+    );
+
+    return {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "x-source-app": "PrintPricePro_BookPrice"
+    };
+};
 
 // ---- Production File Storage Configuration (v5.3) ----
 const PRODUCTION_FILES_DIR = process.env.PRODUCTION_FILES_DIR || path.join(__dirname, 'storage', 'production-files');
