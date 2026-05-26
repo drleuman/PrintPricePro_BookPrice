@@ -15,8 +15,8 @@ process.env.OFFER_SIGNING_SECRET = 'smoke_offer_signing_secret_12345';
 process.env.BPE_JWT_SECRET = process.env.BPE_JWT_SECRET || 'smoke_bpe_jwt_secret_12345';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // Ignore SSL validation for local tests calling remote BPE
 
-// Use the production BPE if local isn't configured, so we can test the real pricing engine
-process.env.BPE_MARKETPLACE_OFFERS_URL = process.env.BPE_MARKETPLACE_OFFERS_URL || 'https://bpe.printprice.pro/api/marketplace/offers';
+// Force the legacy URL so we test that resolveBpeMarketplaceOffersUrl intercepts and resolves it to bpe.printprice.pro
+process.env.BPE_MARKETPLACE_OFFERS_URL = 'http://127.0.0.1:8081/api/marketplace/offers';
 
 const axios = require('axios');
 const path = require('path');

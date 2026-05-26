@@ -74,9 +74,23 @@ const IDENTITY_API_URL =
 const authLoginUrl = `${IDENTITY_API_URL}/api/auth/login`;
 const authRegisterUrl = `${IDENTITY_API_URL}/api/auth/register`;
 
-const BPE_MARKETPLACE_OFFERS_URL =
+function resolveBpeMarketplaceOffersUrl(rawUrl) {
+    const fallbackUrl = "https://bpe.printprice.pro/api/marketplace/offers";
+    const candidate = rawUrl || fallbackUrl;
+    return candidate.includes("127.0.0.1:8081") ? fallbackUrl : candidate;
+}
+
+const RAW_BPE_MARKETPLACE_OFFERS_URL =
     process.env.BPE_MARKETPLACE_OFFERS_URL ||
     `${CONTROL_PLANE_BASE_URL}/api/marketplace/offers`;
+
+const BPE_MARKETPLACE_OFFERS_URL = resolveBpeMarketplaceOffersUrl(RAW_BPE_MARKETPLACE_OFFERS_URL);
+
+console.log("[BPE_MARKETPLACE_OFFERS_URL_SELECTED]", {
+    raw: RAW_BPE_MARKETPLACE_OFFERS_URL,
+    selected: BPE_MARKETPLACE_OFFERS_URL,
+    legacyOverrideDetected: RAW_BPE_MARKETPLACE_OFFERS_URL.includes("127.0.0.1:8081")
+});
 
 // BPE JWT Auth configuration
 const BPE_JWT_SECRET = process.env.BPE_JWT_SECRET;
